@@ -1163,4 +1163,26 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
     marginLeft: 8,
   },
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: theme.colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+    paddingBottom: Platform.OS === 'ios' ? 20 : 10,
+    paddingTop: 10,
+  },
+  tab: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+  },
+  activeTab: {
+    // Optional styling for active tab
+  },
+  tabText: {
+    fontSize: 12,
+    marginTop: 4,
+    fontWeight: '500',
+  },
 });
