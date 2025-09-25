@@ -769,7 +769,7 @@ export default function App() {
   const renderCurrentScreen = () => {
     switch (currentTab) {
       case 0:
-        return <CustomersScreen navigation={{ navigate: (screen: string) => {
+        return <CustomersScreenUpdated navigation={{ navigate: (screen: string) => {
           if (screen === 'Add Customer') setCurrentTab(1);
         }}} />;
       case 1:
@@ -782,7 +782,7 @@ export default function App() {
       case 2:
         return <SettingsScreen />;
       default:
-        return <CustomersScreen navigation={{ navigate: (screen: string) => {
+        return <CustomersScreenUpdated navigation={{ navigate: (screen: string) => {
           if (screen === 'Add Customer') setCurrentTab(1);
         }}} />;
     }
