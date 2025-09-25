@@ -1,15 +1,11 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, Platform } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-
-// Import screens
-import CustomersScreen from './screens/CustomersScreen';
-import AddCustomerScreen from './screens/AddCustomerScreen';
-import SettingsScreen from './screens/SettingsScreen';
 
 const Tab = createBottomTabNavigator();
 
