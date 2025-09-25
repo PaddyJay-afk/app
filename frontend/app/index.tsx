@@ -627,57 +627,91 @@ function CustomerDetailScreen({ route, navigation }: any) {
   );
 }
 
-const Tab = createBottomTabNavigator();
-const Stack = createNativeStackNavigator();
-
-function TabNavigator() {
-  return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        tabBarIcon: ({ focused, color, size }) => {
-          let iconName: keyof typeof Ionicons.glyphMap = 'help-circle';
-
-          if (route.name === 'Customers') {
-            iconName = focused ? 'people' : 'people-outline';
-          } else if (route.name === 'Add Customer') {
-            iconName = focused ? 'person-add' : 'person-add-outline';
-          } else if (route.name === 'Settings') {
-            iconName = focused ? 'settings' : 'settings-outline';
-          }
-
-          return <Ionicons name={iconName} size={size} color={color} />;
-        },
-        tabBarActiveTintColor: theme.colors.tabBarActive,
-        tabBarInactiveTintColor: theme.colors.tabBarInactive,
-        tabBarStyle: {
-          backgroundColor: theme.colors.surface,
-          borderTopColor: theme.colors.border,
-          paddingBottom: Platform.OS === 'ios' ? 20 : 10,
-          height: Platform.OS === 'ios' ? 85 : 65,
-        },
-        headerShown: false,
-      })}
-    >
-      <Tab.Screen name="Customers" component={CustomersScreen} />
-      <Tab.Screen name="Add Customer" component={AddCustomerScreen} />
-      <Tab.Screen name="Settings" component={SettingsScreen} />
-    </Tab.Navigator>
-  );
-}
-
 export default function App() {
+  const [currentTab, setCurrentTab] = useState(0);
+
+  const renderCurrentScreen = () => {
+    switch (currentTab) {
+      case 0:
+        return <CustomersScreen navigation={{ navigate: (screen: string) => {
+          if (screen === 'Add Customer') setCurrentTab(1);
+        }}} />;
+      case 1:
+        return <AddCustomerScreen navigation={{ 
+          goBack: () => setCurrentTab(0),
+          navigate: (screen: string) => {
+            if (screen === 'Customers') setCurrentTab(0);
+          }
+        }} />;
+      case 2:
+        return <SettingsScreen />;
+      default:
+        return <CustomersScreen navigation={{ navigate: (screen: string) => {
+          if (screen === 'Add Customer') setCurrentTab(1);
+        }}} />;
+    }
+  };
+
   return (
     <SafeAreaProvider>
       <StatusBar style="light" backgroundColor={theme.colors.background} />
-      <Stack.Navigator
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: theme.colors.background }
-        }}
-      >
-        <Stack.Screen name="Main" component={TabNavigator} />
-        <Stack.Screen name="CustomerDetail" component={CustomerDetailScreen} />
-      </Stack.Navigator>
+      <View style={styles.container}>
+        {renderCurrentScreen()}
+        
+        {/* Custom Tab Bar */}
+        <View style={styles.tabBar}>
+          <TouchableOpacity
+            style={[styles.tab, currentTab === 0 && styles.activeTab]}
+            onPress={() => setCurrentTab(0)}
+          >
+            <Ionicons 
+              name={currentTab === 0 ? 'people' : 'people-outline'} 
+              size={24} 
+              color={currentTab === 0 ? theme.colors.tabBarActive : theme.colors.tabBarInactive} 
+            />
+            <Text style={[
+              styles.tabText, 
+              { color: currentTab === 0 ? theme.colors.tabBarActive : theme.colors.tabBarInactive }
+            ]}>
+              Customers
+            </Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={[styles.tab, currentTab === 1 && styles.activeTab]}
+            onPress={() => setCurrentTab(1)}
+          >
+            <Ionicons 
+              name={currentTab === 1 ? 'person-add' : 'person-add-outline'} 
+              size={24} 
+              color={currentTab === 1 ? theme.colors.tabBarActive : theme.colors.tabBarInactive} 
+            />
+            <Text style={[
+              styles.tabText, 
+              { color: currentTab === 1 ? theme.colors.tabBarActive : theme.colors.tabBarInactive }
+            ]}>
+              Add Customer
+            </Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={[styles.tab, currentTab === 2 && styles.activeTab]}
+            onPress={() => setCurrentTab(2)}
+          >
+            <Ionicons 
+              name={currentTab === 2 ? 'settings' : 'settings-outline'} 
+              size={24} 
+              color={currentTab === 2 ? theme.colors.tabBarActive : theme.colors.tabBarInactive} 
+            />
+            <Text style={[
+              styles.tabText, 
+              { color: currentTab === 2 ? theme.colors.tabBarActive : theme.colors.tabBarInactive }
+            ]}>
+              Settings
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
     </SafeAreaProvider>
   );
 }
