@@ -671,31 +671,16 @@ function TabNavigator() {
 export default function App() {
   return (
     <SafeAreaProvider>
-      <NavigationContainer
-        independent={true}
-        theme={{
-          dark: true,
-          colors: {
-            primary: theme.colors.primary,
-            background: theme.colors.background,
-            card: theme.colors.surface,
-            text: theme.colors.text,
-            border: theme.colors.border,
-            notification: theme.colors.accent,
-          }
+      <StatusBar style="light" backgroundColor={theme.colors.background} />
+      <Stack.Navigator
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: theme.colors.background }
         }}
       >
-        <StatusBar style="light" backgroundColor={theme.colors.background} />
-        <Stack.Navigator
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: theme.colors.background }
-          }}
-        >
-          <Stack.Screen name="Main" component={TabNavigator} />
-          <Stack.Screen name="CustomerDetail" component={CustomerDetailScreen} />
-        </Stack.Navigator>
-      </NavigationContainer>
+        <Stack.Screen name="Main" component={TabNavigator} />
+        <Stack.Screen name="CustomerDetail" component={CustomerDetailScreen} />
+      </Stack.Navigator>
     </SafeAreaProvider>
   );
 }
