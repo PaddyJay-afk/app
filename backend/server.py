@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, HTTPException
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -6,10 +6,10 @@ import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional
 import uuid
 from datetime import datetime
-
+from enum import Enum
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -25,32 +25,262 @@ app = FastAPI()
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
+# Enums
+class PropType(str, Enum):
+    stainless = "stainless"
+    aluminum = "aluminum"
+    bronze = "bronze"
 
-# Define Models
-class StatusCheck(BaseModel):
+class JobStatus(str, Enum):
+    pending = "pending"
+    in_progress = "in_progress"
+    completed = "completed"
+
+# Data Models
+class BoatInfo(BaseModel):
+    year: Optional[str] = None
+    make: Optional[str] = None
+    model: Optional[str] = None
+    length: Optional[str] = None
+    hin: Optional[str] = None
+
+class EngineInfo(BaseModel):
+    engine_type: Optional[str] = None
+    serial_number: Optional[str] = None
+    year: Optional[str] = None
+    make: Optional[str] = None
+    model: Optional[str] = None
+    horsepower: Optional[str] = None
+    hours: Optional[str] = None
+
+class CustomerImage(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
+    base64_data: str
+    description: Optional[str] = None
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
-class StatusCheckCreate(BaseModel):
-    client_name: str
+class Job(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    description: str
+    status: JobStatus = JobStatus.pending
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
-# Add your routes to the router instead of directly to app
+class Note(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    content: str
+    author: str = "User"
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+class Customer(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    boat: BoatInfo = Field(default_factory=BoatInfo)
+    engine: EngineInfo = Field(default_factory=EngineInfo)
+    prop_type: Optional[PropType] = None
+    images: List[CustomerImage] = Field(default_factory=list)
+    jobs: List[Job] = Field(default_factory=list)
+    notes: List[Note] = Field(default_factory=list)
+    last_activity: datetime = Field(default_factory=datetime.utcnow)
+
+class CustomerCreate(BaseModel):
+    name: str
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    boat: Optional[BoatInfo] = None
+    engine: Optional[EngineInfo] = None
+    prop_type: Optional[PropType] = None
+
+class CustomerUpdate(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    boat: Optional[BoatInfo] = None
+    engine: Optional[EngineInfo] = None
+    prop_type: Optional[PropType] = None
+
+class ImageUpload(BaseModel):
+    base64_data: str
+    description: Optional[str] = None
+
+class JobCreate(BaseModel):
+    description: str
+
+class JobUpdate(BaseModel):
+    description: Optional[str] = None
+    status: Optional[JobStatus] = None
+
+class NoteCreate(BaseModel):
+    content: str
+    author: str = "User"
+
+# API Routes
 @api_router.get("/")
 async def root():
-    return {"message": "Hello World"}
+    return {"message": "Boat Repair Customer Management API"}
 
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.dict()
-    status_obj = StatusCheck(**status_dict)
-    _ = await db.status_checks.insert_one(status_obj.dict())
-    return status_obj
+# Customer endpoints
+@api_router.post("/customers", response_model=Customer)
+async def create_customer(customer_data: CustomerCreate):
+    customer_dict = customer_data.dict()
+    if customer_dict.get('boat') is None:
+        customer_dict['boat'] = {}
+    if customer_dict.get('engine') is None:
+        customer_dict['engine'] = {}
+    
+    customer = Customer(**customer_dict)
+    result = await db.customers.insert_one(customer.dict())
+    return customer
 
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    status_checks = await db.status_checks.find().to_list(1000)
-    return [StatusCheck(**status_check) for status_check in status_checks]
+@api_router.get("/customers", response_model=List[Customer])
+async def get_customers():
+    customers = await db.customers.find().to_list(1000)
+    # Sort by last_activity (most recent first) then by name alphabetically
+    sorted_customers = sorted(customers, key=lambda x: (-x.get('last_activity', datetime.min).timestamp(), x.get('name', '').lower()))
+    return [Customer(**customer) for customer in sorted_customers]
+
+@api_router.get("/customers/{customer_id}", response_model=Customer)
+async def get_customer(customer_id: str):
+    customer = await db.customers.find_one({"id": customer_id})
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    return Customer(**customer)
+
+@api_router.put("/customers/{customer_id}", response_model=Customer)
+async def update_customer(customer_id: str, customer_data: CustomerUpdate):
+    existing_customer = await db.customers.find_one({"id": customer_id})
+    if not existing_customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    
+    update_data = customer_data.dict(exclude_unset=True)
+    update_data['last_activity'] = datetime.utcnow()
+    
+    await db.customers.update_one({"id": customer_id}, {"$set": update_data})
+    updated_customer = await db.customers.find_one({"id": customer_id})
+    return Customer(**updated_customer)
+
+@api_router.delete("/customers/{customer_id}")
+async def delete_customer(customer_id: str):
+    result = await db.customers.delete_one({"id": customer_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    return {"message": "Customer deleted successfully"}
+
+# Image endpoints
+@api_router.post("/customers/{customer_id}/images")
+async def add_customer_image(customer_id: str, image_data: ImageUpload):
+    customer = await db.customers.find_one({"id": customer_id})
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    
+    new_image = CustomerImage(**image_data.dict())
+    
+    await db.customers.update_one(
+        {"id": customer_id},
+        {
+            "$push": {"images": new_image.dict()},
+            "$set": {"last_activity": datetime.utcnow()}
+        }
+    )
+    return {"message": "Image added successfully", "image_id": new_image.id}
+
+@api_router.delete("/customers/{customer_id}/images/{image_id}")
+async def delete_customer_image(customer_id: str, image_id: str):
+    result = await db.customers.update_one(
+        {"id": customer_id},
+        {
+            "$pull": {"images": {"id": image_id}},
+            "$set": {"last_activity": datetime.utcnow()}
+        }
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    return {"message": "Image deleted successfully"}
+
+# Job endpoints
+@api_router.post("/customers/{customer_id}/jobs")
+async def add_customer_job(customer_id: str, job_data: JobCreate):
+    customer = await db.customers.find_one({"id": customer_id})
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    
+    new_job = Job(**job_data.dict())
+    
+    await db.customers.update_one(
+        {"id": customer_id},
+        {
+            "$push": {"jobs": new_job.dict()},
+            "$set": {"last_activity": datetime.utcnow()}
+        }
+    )
+    return {"message": "Job added successfully", "job_id": new_job.id}
+
+@api_router.put("/customers/{customer_id}/jobs/{job_id}")
+async def update_customer_job(customer_id: str, job_id: str, job_data: JobUpdate):
+    update_data = job_data.dict(exclude_unset=True)
+    update_data['updated_at'] = datetime.utcnow()
+    
+    # Create update query for nested job object
+    update_fields = {}
+    for key, value in update_data.items():
+        update_fields[f"jobs.$.{key}"] = value
+    
+    result = await db.customers.update_one(
+        {"id": customer_id, "jobs.id": job_id},
+        {
+            "$set": {**update_fields, "last_activity": datetime.utcnow()}
+        }
+    )
+    
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Customer or job not found")
+    return {"message": "Job updated successfully"}
+
+@api_router.delete("/customers/{customer_id}/jobs/{job_id}")
+async def delete_customer_job(customer_id: str, job_id: str):
+    result = await db.customers.update_one(
+        {"id": customer_id},
+        {
+            "$pull": {"jobs": {"id": job_id}},
+            "$set": {"last_activity": datetime.utcnow()}
+        }
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    return {"message": "Job deleted successfully"}
+
+# Note endpoints
+@api_router.post("/customers/{customer_id}/notes")
+async def add_customer_note(customer_id: str, note_data: NoteCreate):
+    customer = await db.customers.find_one({"id": customer_id})
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    
+    new_note = Note(**note_data.dict())
+    
+    await db.customers.update_one(
+        {"id": customer_id},
+        {
+            "$push": {"notes": new_note.dict()},
+            "$set": {"last_activity": datetime.utcnow()}
+        }
+    )
+    return {"message": "Note added successfully", "note_id": new_note.id}
+
+@api_router.delete("/customers/{customer_id}/notes/{note_id}")
+async def delete_customer_note(customer_id: str, note_id: str):
+    result = await db.customers.update_one(
+        {"id": customer_id},
+        {
+            "$pull": {"notes": {"id": note_id}},
+            "$set": {"last_activity": datetime.utcnow()}
+        }
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    return {"message": "Note deleted successfully"}
 
 # Include the router in the main app
 app.include_router(api_router)
