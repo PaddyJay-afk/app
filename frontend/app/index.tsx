@@ -626,66 +626,64 @@ export default function App() {
   };
 
   return (
-    <SafeAreaProvider>
+    <View style={styles.appContainer}>
       <StatusBar style="light" backgroundColor={theme.colors.background} />
-      <View style={styles.container}>
-        {renderCurrentScreen()}
+      {renderCurrentScreen()}
+      
+      {/* Custom Tab Bar */}
+      <View style={styles.tabBar}>
+        <TouchableOpacity
+          style={[styles.tab, currentTab === 0 && styles.activeTab]}
+          onPress={() => setCurrentTab(0)}
+        >
+          <Ionicons 
+            name={currentTab === 0 ? 'people' : 'people-outline'} 
+            size={24} 
+            color={currentTab === 0 ? theme.colors.tabBarActive : theme.colors.tabBarInactive} 
+          />
+          <Text style={[
+            styles.tabText, 
+            { color: currentTab === 0 ? theme.colors.tabBarActive : theme.colors.tabBarInactive }
+          ]}>
+            Customers
+          </Text>
+        </TouchableOpacity>
         
-        {/* Custom Tab Bar */}
-        <View style={styles.tabBar}>
-          <TouchableOpacity
-            style={[styles.tab, currentTab === 0 && styles.activeTab]}
-            onPress={() => setCurrentTab(0)}
-          >
-            <Ionicons 
-              name={currentTab === 0 ? 'people' : 'people-outline'} 
-              size={24} 
-              color={currentTab === 0 ? theme.colors.tabBarActive : theme.colors.tabBarInactive} 
-            />
-            <Text style={[
-              styles.tabText, 
-              { color: currentTab === 0 ? theme.colors.tabBarActive : theme.colors.tabBarInactive }
-            ]}>
-              Customers
-            </Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={[styles.tab, currentTab === 1 && styles.activeTab]}
-            onPress={() => setCurrentTab(1)}
-          >
-            <Ionicons 
-              name={currentTab === 1 ? 'person-add' : 'person-add-outline'} 
-              size={24} 
-              color={currentTab === 1 ? theme.colors.tabBarActive : theme.colors.tabBarInactive} 
-            />
-            <Text style={[
-              styles.tabText, 
-              { color: currentTab === 1 ? theme.colors.tabBarActive : theme.colors.tabBarInactive }
-            ]}>
-              Add Customer
-            </Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={[styles.tab, currentTab === 2 && styles.activeTab]}
-            onPress={() => setCurrentTab(2)}
-          >
-            <Ionicons 
-              name={currentTab === 2 ? 'settings' : 'settings-outline'} 
-              size={24} 
-              color={currentTab === 2 ? theme.colors.tabBarActive : theme.colors.tabBarInactive} 
-            />
-            <Text style={[
-              styles.tabText, 
-              { color: currentTab === 2 ? theme.colors.tabBarActive : theme.colors.tabBarInactive }
-            ]}>
-              Settings
-            </Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          style={[styles.tab, currentTab === 1 && styles.activeTab]}
+          onPress={() => setCurrentTab(1)}
+        >
+          <Ionicons 
+            name={currentTab === 1 ? 'person-add' : 'person-add-outline'} 
+            size={24} 
+            color={currentTab === 1 ? theme.colors.tabBarActive : theme.colors.tabBarInactive} 
+          />
+          <Text style={[
+            styles.tabText, 
+            { color: currentTab === 1 ? theme.colors.tabBarActive : theme.colors.tabBarInactive }
+          ]}>
+            Add Customer
+          </Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={[styles.tab, currentTab === 2 && styles.activeTab]}
+          onPress={() => setCurrentTab(2)}
+        >
+          <Ionicons 
+            name={currentTab === 2 ? 'settings' : 'settings-outline'} 
+            size={24} 
+            color={currentTab === 2 ? theme.colors.tabBarActive : theme.colors.tabBarInactive} 
+          />
+          <Text style={[
+            styles.tabText, 
+            { color: currentTab === 2 ? theme.colors.tabBarActive : theme.colors.tabBarInactive }
+          ]}>
+            Settings
+          </Text>
+        </TouchableOpacity>
       </View>
-    </SafeAreaProvider>
+    </View>
   );
 }
 
