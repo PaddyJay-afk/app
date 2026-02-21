@@ -13,32 +13,113 @@ import {
   Platform,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useForm, Controller } from 'react-hook-form';
+import type { RegisterOptions } from 'react-hook-form';
+import type { KeyboardTypeOptions } from 'react-native';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as Font from 'expo-font';
+import * as SplashScreen from 'expo-splash-screen';
+import * as Haptics from 'expo-haptics';
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+  withRepeat,
+  Easing,
+} from 'react-native-reanimated';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
-const theme = {
-  colors: {
-    primary: '#D4AF37',
-    secondary: '#E8B4CB',
-    accent: '#8A2BE2',
-    background: '#1A1A1A',
-    surface: '#2D2D2D',
-    text: '#FFFFFF',
-    textSecondary: '#B0B0B0',
-    border: '#3D3D3D',
-    success: '#4CAF50',
-    warning: '#FF9800',
-    error: '#F44336',
-    pending: '#FF9800',
-    inProgress: '#2196F3',
-    completed: '#4CAF50',
-    tabBarActive: '#D4AF37',
-    tabBarInactive: '#666666',
-  }
+// --- Design Tokens ---
+
+const withAlpha = (hex: string, alpha: number): string => {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };
+
+const spacing = {
+  xs: 4,
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 20,
+  '2xl': 24,
+  '3xl': 32,
+  '4xl': 40,
+  '5xl': 48,
+} as const;
+
+const typography = {
+  fontFamily: {
+    mono: 'SpaceMono',
+  },
+  size: {
+    xs: 11,
+    sm: 12,
+    base: 14,
+    md: 16,
+    lg: 18,
+    xl: 20,
+    '2xl': 24,
+  },
+  weight: {
+    regular: '400' as const,
+    medium: '500' as const,
+    semibold: '600' as const,
+    bold: '700' as const,
+  },
+} as const;
+
+const radius = {
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 20,
+  full: 9999,
+} as const;
+
+const colors = {
+  primary: '#D4AF37',
+  primaryDark: '#B8962E',
+  background: '#0A0E1A',
+  surface: 'rgba(255,255,255,0.08)',
+  surfaceBorder: 'rgba(255,255,255,0.12)',
+  elevated: 'rgba(255,255,255,0.12)',
+  text: '#FFFFFF',
+  textSecondary: '#A0A8B8',
+  textMuted: '#6B7280',
+  success: '#4CAF50',
+  warning: '#FF9800',
+  error: '#F44336',
+  info: '#2196F3',
+  pending: '#FF9800',
+  inProgress: '#2196F3',
+  completed: '#4CAF50',
+  tabBarActive: '#D4AF37',
+  tabBarInactive: '#6B7280',
+} as const;
+
+// --- Type Interfaces ---
+
+interface ScreenNavigation {
+  navigate: (screen: string) => void;
+  goBack: () => void;
+}
+
+interface SettingOption {
+  title: string;
+  subtitle: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
+}
 
 interface Customer {
   id: string;
@@ -110,10 +191,115 @@ const propTypes = [
   { label: 'Bronze', value: 'bronze' },
 ];
 
-// CustomersScreen Component (Updated version used below)
+// --- Reusable Components ---
 
-// AddCustomerScreen Component
-function AddCustomerScreen({ navigation }: any) {
+const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
+
+const PressableScale = ({
+  children,
+  onPress,
+  style,
+  disabled,
+  haptic = true,
+}: {
+  children: React.ReactNode;
+  onPress?: () => void;
+  style?: object | object[];
+  disabled?: boolean;
+  haptic?: boolean;
+}) => {
+  const scale = useSharedValue(1);
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return (
+    <AnimatedTouchable
+      style={[style, animatedStyle]}
+      onPressIn={() => {
+        scale.value = withSpring(0.96, { damping: 15, stiffness: 300 });
+      }}
+      onPressOut={() => {
+        scale.value = withSpring(1, { damping: 15, stiffness: 300 });
+      }}
+      onPress={() => {
+        if (haptic && Platform.OS !== 'web') {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }
+        onPress?.();
+      }}
+      activeOpacity={0.9}
+      disabled={disabled}
+    >
+      {children}
+    </AnimatedTouchable>
+  );
+};
+
+const GlassCard = ({
+  children,
+  style,
+  intensity = 25,
+  cardRadius = radius.lg,
+}: {
+  children: React.ReactNode;
+  style?: object;
+  intensity?: number;
+  cardRadius?: number;
+}) => (
+  <View style={[{
+    borderRadius: cardRadius,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.surfaceBorder,
+  }, style]}>
+    {Platform.OS === 'web' ? (
+      <View style={{
+        padding: spacing.lg,
+        backgroundColor: 'rgba(255,255,255,0.06)',
+      }}>
+        {children}
+      </View>
+    ) : (
+      <BlurView
+        intensity={intensity}
+        tint="dark"
+        style={{ padding: spacing.lg }}
+      >
+        {children}
+      </BlurView>
+    )}
+  </View>
+);
+
+const LoadingPulse = () => {
+  const opacity = useSharedValue(0.3);
+
+  React.useEffect(() => {
+    opacity.value = withRepeat(
+      withTiming(1, { duration: 800, easing: Easing.inOut(Easing.ease) }),
+      -1,
+      true
+    );
+  }, [opacity]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+  }));
+
+  return (
+    <View style={styles.centerContent}>
+      <Animated.View style={animatedStyle}>
+        <Ionicons name="boat" size={spacing['5xl']} color={colors.primary} />
+      </Animated.View>
+      <Text style={styles.loadingText}>Loading...</Text>
+    </View>
+  );
+};
+
+// --- Screen Components ---
+
+function AddCustomerScreen({ navigation }: { navigation: ScreenNavigation }) {
   const [loading, setLoading] = useState(false);
   const [showPropPicker, setShowPropPicker] = useState(false);
 
@@ -166,9 +352,7 @@ function AddCustomerScreen({ navigation }: any) {
 
       const response = await fetch(`${API_BASE_URL}/api/customers`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(customerData),
       });
 
@@ -177,14 +361,8 @@ function AddCustomerScreen({ navigation }: any) {
           'Success',
           'Customer added successfully!',
           [
-            {
-              text: 'Add Another',
-              onPress: () => reset(),
-            },
-            {
-              text: 'View Customers',
-              onPress: () => navigation.navigate('Customers'),
-            },
+            { text: 'Add Another', onPress: () => reset() },
+            { text: 'View Customers', onPress: () => navigation.navigate('Customers') },
           ]
         );
       } else {
@@ -201,8 +379,8 @@ function AddCustomerScreen({ navigation }: any) {
   const renderInput = (
     name: keyof CustomerFormData,
     placeholder: string,
-    rules?: any,
-    keyboardType?: any
+    rules?: RegisterOptions<CustomerFormData>,
+    keyboardType?: KeyboardTypeOptions
   ) => (
     <Controller
       control={control}
@@ -210,18 +388,17 @@ function AddCustomerScreen({ navigation }: any) {
       rules={rules}
       render={({ field: { onChange, onBlur, value } }) => (
         <View style={styles.inputContainer}>
-          <TextInput
-            style={[
-              styles.input,
-              errors[name] && styles.inputError
-            ]}
-            placeholder={placeholder}
-            placeholderTextColor={theme.colors.textSecondary}
-            onBlur={onBlur}
-            onChangeText={onChange}
-            value={value}
-            keyboardType={keyboardType || 'default'}
-          />
+          <View style={[styles.inputWrapper, errors[name] && styles.inputErrorBorder]}>
+            <TextInput
+              style={styles.input}
+              placeholder={placeholder}
+              placeholderTextColor={colors.textSecondary}
+              onBlur={onBlur}
+              onChangeText={onChange}
+              value={value}
+              keyboardType={keyboardType ?? 'default'}
+            />
+          </View>
           {errors[name] && (
             <Text style={styles.errorText}>{errors[name]?.message}</Text>
           )}
@@ -245,16 +422,16 @@ function AddCustomerScreen({ navigation }: any) {
             </Text>
             <Ionicons
               name={showPropPicker ? 'chevron-up' : 'chevron-down'}
-              size={20}
-              color={theme.colors.textSecondary}
+              size={spacing.xl}
+              color={colors.textSecondary}
             />
           </TouchableOpacity>
-          
+
           {showPropPicker && (
-            <View style={styles.dropdown}>
+            <View style={styles.dropdownWrapper}>
               {propTypes.map((prop) => (
                 <TouchableOpacity
-                  key={prop.value}
+                  key={prop.value || 'empty'}
                   style={[
                     styles.dropdownOption,
                     value === prop.value && styles.selectedOption
@@ -279,6 +456,18 @@ function AddCustomerScreen({ navigation }: any) {
     />
   );
 
+  const renderSectionHeader = (title: string) => (
+    <View style={styles.sectionHeaderRow}>
+      <LinearGradient
+        colors={[colors.primary, 'transparent']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.sectionAccentLine}
+      />
+      <Text style={styles.sectionTitle}>{title}</Text>
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
@@ -286,14 +475,17 @@ function AddCustomerScreen({ navigation }: any) {
         style={styles.keyboardView}
       >
         <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-          >
-            <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
-          </TouchableOpacity>
+          <PressableScale onPress={() => navigation.goBack()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={spacing['2xl']} color={colors.text} />
+          </PressableScale>
           <Text style={styles.title}>Add Customer</Text>
           <View style={styles.placeholder} />
+          <LinearGradient
+            colors={[withAlpha(colors.primary, 0.4), 'transparent']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.headerBorderGradient}
+          />
         </View>
 
         <ScrollView
@@ -302,15 +494,15 @@ function AddCustomerScreen({ navigation }: any) {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Customer Information</Text>
+            {renderSectionHeader('Customer Information')}
             {renderInput('name', 'Customer Name *', { required: 'Name is required' })}
-            {renderInput('phone', 'Phone Number', {}, 'phone-pad')}
+            {renderInput('phone', 'Phone Number', undefined, 'phone-pad')}
             {renderInput('address', 'Address')}
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Boat Information</Text>
-            {renderInput('boat_year', 'Boat Year', {}, 'numeric')}
+            {renderSectionHeader('Boat Information')}
+            {renderInput('boat_year', 'Boat Year', undefined, 'numeric')}
             {renderInput('boat_make', 'Boat Make')}
             {renderInput('boat_model', 'Boat Model')}
             {renderInput('boat_length', 'Boat Length')}
@@ -319,34 +511,40 @@ function AddCustomerScreen({ navigation }: any) {
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Engine Information</Text>
+            {renderSectionHeader('Engine Information')}
             {renderInput('engine_type', 'Engine Type')}
             {renderInput('engine_serial_number', 'Engine Serial Number')}
-            {renderInput('engine_year', 'Engine Year', {}, 'numeric')}
+            {renderInput('engine_year', 'Engine Year', undefined, 'numeric')}
             {renderInput('engine_make', 'Engine Make')}
             {renderInput('engine_model', 'Engine Model')}
-            {renderInput('engine_horsepower', 'Engine Horsepower', {}, 'numeric')}
-            {renderInput('engine_hours', 'Engine Hours', {}, 'numeric')}
+            {renderInput('engine_horsepower', 'Engine Horsepower', undefined, 'numeric')}
+            {renderInput('engine_hours', 'Engine Hours', undefined, 'numeric')}
           </View>
 
-          <TouchableOpacity
-            style={[styles.submitButton, loading && styles.submitButtonDisabled]}
+          <PressableScale
             onPress={handleSubmit(onSubmit)}
             disabled={loading}
+            style={loading ? { opacity: 0.6 } : undefined}
           >
-            <Text style={styles.submitButtonText}>
-              {loading ? 'Adding Customer...' : 'Add Customer'}
-            </Text>
-          </TouchableOpacity>
+            <LinearGradient
+              colors={[colors.primary, colors.primaryDark]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.submitButton}
+            >
+              <Text style={styles.submitButtonText}>
+                {loading ? 'Adding Customer...' : 'Add Customer'}
+              </Text>
+            </LinearGradient>
+          </PressableScale>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
-// SettingsScreen Component  
 function SettingsScreen() {
-  const settingsOptions = [
+  const settingsOptions: SettingOption[] = [
     {
       title: 'About',
       subtitle: 'App version and information',
@@ -373,78 +571,94 @@ function SettingsScreen() {
     },
   ];
 
-  const renderSettingOption = (option: any, index: number) => (
-    <TouchableOpacity
-      key={index}
-      style={styles.optionCard}
-      onPress={option.onPress}
-      activeOpacity={0.7}
-    >
-      <View style={styles.optionIcon}>
-        <Ionicons name={option.icon} size={24} color={theme.colors.primary} />
-      </View>
-      <View style={styles.optionContent}>
-        <Text style={styles.optionTitle}>{option.title}</Text>
-        <Text style={styles.optionSubtitle}>{option.subtitle}</Text>
-      </View>
-      <Ionicons name="chevron-forward" size={20} color={theme.colors.textSecondary} />
-    </TouchableOpacity>
+  const renderSettingOption = (option: SettingOption) => (
+    <PressableScale key={option.title} onPress={option.onPress}>
+      <GlassCard style={styles.optionCardOuter} intensity={20}>
+        <View style={styles.optionRow}>
+          <View style={styles.optionIcon}>
+            <Ionicons name={option.icon} size={spacing['2xl']} color={colors.primary} />
+          </View>
+          <View style={styles.optionContent}>
+            <Text style={styles.optionTitle}>{option.title}</Text>
+            <Text style={styles.optionSubtitle}>{option.subtitle}</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={spacing.xl} color={colors.textSecondary} />
+        </View>
+      </GlassCard>
+    </PressableScale>
   );
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Settings</Text>
+        <LinearGradient
+          colors={[withAlpha(colors.primary, 0.4), 'transparent']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.headerBorderGradient}
+        />
       </View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>General</Text>
-          {settingsOptions.map(renderSettingOption)}
-        </View>
+        <View style={styles.scrollContent}>
+          <View style={styles.section}>
+            <View style={styles.sectionHeaderRow}>
+              <LinearGradient
+                colors={[colors.primary, 'transparent']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.sectionAccentLine}
+              />
+              <Text style={styles.sectionTitle}>General</Text>
+            </View>
+            {settingsOptions.map(renderSettingOption)}
+          </View>
 
-        <View style={styles.appInfo}>
-          <View style={styles.logoContainer}>
-            <Ionicons name="boat" size={48} color={theme.colors.primary} />
-            <Text style={styles.appName}>Boat Repair Manager</Text>
-            <Text style={styles.appVersion}>Version 1.0.0</Text>
-          </View>
-          
-          <Text style={styles.description}>
-            Manage your boat repair customers, track jobs, document work with photos, 
-            and keep detailed notes all in one place.
-          </Text>
-          
-          <View style={styles.features}>
-            <View style={styles.featureItem}>
-              <Ionicons name="checkmark-circle" size={16} color={theme.colors.success} />
-              <Text style={styles.featureText}>Customer Management</Text>
+          <GlassCard style={styles.appInfoCard} intensity={30}>
+            <View style={styles.logoContainer}>
+              <View style={styles.logoGlow}>
+                <LinearGradient
+                  colors={[withAlpha(colors.primary, 0.3), 'transparent']}
+                  style={StyleSheet.absoluteFill}
+                  start={{ x: 0.5, y: 0 }}
+                  end={{ x: 0.5, y: 1 }}
+                />
+              </View>
+              <Ionicons name="boat" size={spacing['5xl']} color={colors.primary} />
+              <Text style={styles.appName}>Boat Repair Manager</Text>
+              <Text style={styles.appVersion}>Version 1.0.0</Text>
             </View>
-            <View style={styles.featureItem}>
-              <Ionicons name="checkmark-circle" size={16} color={theme.colors.success} />
-              <Text style={styles.featureText}>Job Tracking</Text>
+
+            <Text style={styles.description}>
+              Manage your boat repair customers, track jobs, document work with photos,
+              and keep detailed notes all in one place.
+            </Text>
+
+            <View style={styles.features}>
+              {['Customer Management', 'Job Tracking', 'Photo Documentation', 'Notes & Comments'].map(
+                (feature) => (
+                  <View key={feature} style={styles.featureItem}>
+                    <Ionicons name="checkmark-circle" size={spacing.lg} color={colors.success} />
+                    <Text style={styles.featureText}>{feature}</Text>
+                  </View>
+                )
+              )}
             </View>
-            <View style={styles.featureItem}>
-              <Ionicons name="checkmark-circle" size={16} color={theme.colors.success} />
-              <Text style={styles.featureText}>Photo Documentation</Text>
-            </View>
-            <View style={styles.featureItem}>
-              <Ionicons name="checkmark-circle" size={16} color={theme.colors.success} />
-              <Text style={styles.featureText}>Notes & Comments</Text>
-            </View>
-          </View>
+          </GlassCard>
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-// Remove navigation calls that reference CustomerDetail for now
-function CustomersScreenUpdated({ navigation }: any) {
+function CustomersScreenUpdated({ navigation }: { navigation: Pick<ScreenNavigation, 'navigate'> }) {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchFocused, setSearchFocused] = useState(false);
+  const searchBorderOpacity = useSharedValue(0);
 
   const filteredCustomers = useMemo(() => {
     if (!searchQuery) return customers;
@@ -481,68 +695,77 @@ function CustomersScreenUpdated({ navigation }: any) {
   };
 
   const getJobStatusCount = (customer: Customer) => {
-    const pending = customer.jobs.filter(job => job.status === 'pending').length;
-    const inProgress = customer.jobs.filter(job => job.status === 'in_progress').length;
-    const completed = customer.jobs.filter(job => job.status === 'completed').length;
-    return { pending, inProgress, completed };
+    return customer.jobs.reduce(
+      (counts, job) => {
+        if (job.status === 'pending') counts.pending++;
+        else if (job.status === 'in_progress') counts.inProgress++;
+        else if (job.status === 'completed') counts.completed++;
+        return counts;
+      },
+      { pending: 0, inProgress: 0, completed: 0 }
+    );
   };
 
-  const renderCustomerCard = ({ item }: { item: Customer }) => {
+  const searchBorderStyle = useAnimatedStyle(() => ({
+    borderColor: `rgba(212, 175, 55, ${searchBorderOpacity.value})`,
+  }));
+
+  const renderCustomerCard = ({ item, index }: { item: Customer; index: number }) => {
     const jobCounts = getJobStatusCount(item);
     const boatInfo = `${item.boat.year || ''} ${item.boat.make || ''} ${item.boat.model || ''}`.trim();
 
     return (
-      <TouchableOpacity
-        style={styles.customerCard}
-        onPress={() => Alert.alert('Customer Details', 'Full customer management coming soon!')}
-        activeOpacity={0.7}
-      >
-        <View style={styles.customerHeader}>
-          <View style={styles.customerInfo}>
-            <Text style={styles.customerName}>{item.name}</Text>
-            {boatInfo && <Text style={styles.boatInfo}>{boatInfo}</Text>}
-            {item.phone && <Text style={styles.contactInfo}>{item.phone}</Text>}
-          </View>
-          <View style={styles.customerMeta}>
-            <Text style={styles.imageCount}>
-              <Ionicons name="images" size={14} color={theme.colors.textSecondary} />
-              {' '}{item.images.length}
-            </Text>
-            <Text style={styles.noteCount}>
-              <Ionicons name="document-text" size={14} color={theme.colors.textSecondary} />
-              {' '}{item.notes.length}
-            </Text>
-          </View>
-        </View>
-        
-        <View style={styles.jobStatusContainer}>
-          <View style={styles.jobStatus}>
-            <View style={[styles.statusDot, { backgroundColor: theme.colors.pending }]} />
-            <Text style={styles.statusText}>{jobCounts.pending} Pending</Text>
-          </View>
-          <View style={styles.jobStatus}>
-            <View style={[styles.statusDot, { backgroundColor: theme.colors.inProgress }]} />
-            <Text style={styles.statusText}>{jobCounts.inProgress} In Progress</Text>
-          </View>
-          <View style={styles.jobStatus}>
-            <View style={[styles.statusDot, { backgroundColor: theme.colors.completed }]} />
-            <Text style={styles.statusText}>{jobCounts.completed} Completed</Text>
-          </View>
-        </View>
+      <Animated.View entering={FadeInDown.delay(index * 80).springify().damping(15)}>
+        <PressableScale
+          onPress={() => Alert.alert('Customer Details', 'Full customer management coming soon!')}
+        >
+          <GlassCard style={styles.customerCardOuter}>
+            <View style={styles.customerHeader}>
+              <View style={styles.customerInfo}>
+                <Text style={styles.customerName}>{item.name}</Text>
+                {boatInfo ? <Text style={styles.boatInfo}>{boatInfo}</Text> : null}
+                {item.phone ? <Text style={styles.contactInfo}>{item.phone}</Text> : null}
+              </View>
+              <View style={styles.customerMeta}>
+                <View style={styles.metaRow}>
+                  <Ionicons name="images" size={typography.size.base} color={colors.textSecondary} />
+                  <Text style={styles.metaCount}>{item.images.length}</Text>
+                </View>
+                <View style={styles.metaRow}>
+                  <Ionicons name="document-text" size={typography.size.base} color={colors.textSecondary} />
+                  <Text style={styles.metaCount}>{item.notes.length}</Text>
+                </View>
+              </View>
+            </View>
 
-        <Text style={styles.lastActivity}>
-          Last updated: {new Date(item.last_activity).toLocaleDateString()}
-        </Text>
-      </TouchableOpacity>
+            <View style={styles.jobStatusContainer}>
+              <View style={styles.jobStatus}>
+                <View style={[styles.statusDot, { backgroundColor: colors.pending }]} />
+                <Text style={styles.statusText}>{jobCounts.pending} Pending</Text>
+              </View>
+              <View style={styles.jobStatus}>
+                <View style={[styles.statusDot, { backgroundColor: colors.inProgress }]} />
+                <Text style={styles.statusText}>{jobCounts.inProgress} In Progress</Text>
+              </View>
+              <View style={styles.jobStatus}>
+                <View style={[styles.statusDot, { backgroundColor: colors.completed }]} />
+                <Text style={styles.statusText}>{jobCounts.completed} Completed</Text>
+              </View>
+            </View>
+
+            <Text style={styles.lastActivity}>
+              Last updated: {new Date(item.last_activity).toLocaleDateString()}
+            </Text>
+          </GlassCard>
+        </PressableScale>
+      </Animated.View>
     );
   };
 
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.centerContent}>
-          <Text style={styles.loadingText}>Loading customers...</Text>
-        </View>
+        <LoadingPulse />
       </SafeAreaView>
     );
   }
@@ -551,35 +774,64 @@ function CustomersScreenUpdated({ navigation }: any) {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Customers</Text>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => navigation.navigate('Add Customer')}
-        >
-          <Ionicons name="add" size={24} color={theme.colors.text} />
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color={theme.colors.textSecondary} style={styles.searchIcon} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search customers, boats..."
-          placeholderTextColor={theme.colors.textSecondary}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
+        <PressableScale onPress={() => navigation.navigate('Add Customer')}>
+          <LinearGradient
+            colors={[colors.primary, colors.primaryDark]}
+            style={styles.addButton}
+          >
+            <Ionicons name="add" size={spacing['2xl']} color="#000" />
+          </LinearGradient>
+        </PressableScale>
+        <LinearGradient
+          colors={[withAlpha(colors.primary, 0.4), 'transparent']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.headerBorderGradient}
         />
       </View>
 
+      <Animated.View style={[styles.searchOuter, searchBorderStyle]}>
+        <View style={styles.searchContainer}>
+          <Ionicons
+            name="search"
+            size={spacing.xl}
+            color={searchFocused ? colors.primary : colors.textSecondary}
+            style={styles.searchIcon}
+          />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search customers, boats..."
+            placeholderTextColor={colors.textSecondary}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            onFocus={() => {
+              setSearchFocused(true);
+              searchBorderOpacity.value = withTiming(0.6, { duration: 200 });
+            }}
+            onBlur={() => {
+              setSearchFocused(false);
+              searchBorderOpacity.value = withTiming(0, { duration: 200 });
+            }}
+          />
+        </View>
+      </Animated.View>
+
       {filteredCustomers.length === 0 ? (
-        <View style={styles.centerContent}>
-          <Ionicons name="boat" size={64} color={theme.colors.textSecondary} />
+        <Animated.View entering={FadeIn.duration(400)} style={styles.centerContent}>
+          <View style={styles.emptyIconContainer}>
+            <LinearGradient
+              colors={[withAlpha(colors.primary, 0.2), 'transparent']}
+              style={[StyleSheet.absoluteFill, { borderRadius: 60 }]}
+            />
+            <Ionicons name="boat" size={64} color={colors.textSecondary} />
+          </View>
           <Text style={styles.emptyTitle}>
             {searchQuery ? 'No customers found' : 'No customers yet'}
           </Text>
           <Text style={styles.emptySubtitle}>
-            {searchQuery ? 'Try adjusting your search' : 'Add your first customer to get started'}
+            {searchQuery ? 'Try adjusting your search' : 'Tap + to add your first customer'}
           </Text>
-        </View>
+        </Animated.View>
       ) : (
         <FlatList
           data={filteredCustomers}
@@ -590,7 +842,7 @@ function CustomersScreenUpdated({ navigation }: any) {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor={theme.colors.primary}
+              tintColor={colors.primary}
             />
           }
           showsVerticalScrollIndicator={false}
@@ -600,101 +852,131 @@ function CustomersScreenUpdated({ navigation }: any) {
   );
 }
 
+// --- App Root ---
+
+SplashScreen.preventAutoHideAsync();
+
+const TAB_CONFIG = [
+  { key: 0, label: 'Customers', iconActive: 'people' as const, iconInactive: 'people-outline' as const },
+  { key: 1, label: 'Add', iconActive: 'person-add' as const, iconInactive: 'person-add-outline' as const },
+  { key: 2, label: 'Settings', iconActive: 'settings' as const, iconInactive: 'settings-outline' as const },
+];
+
 export default function App() {
   const [currentTab, setCurrentTab] = useState(0);
+  const insets = useSafeAreaInsets();
+  const [fontsLoaded] = Font.useFonts({
+    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
+  });
 
-  const renderCurrentScreen = () => {
-    switch (currentTab) {
-      case 0:
-        return <CustomersScreenUpdated navigation={{ navigate: (screen: string) => {
-          if (screen === 'Add Customer') setCurrentTab(1);
-        }}} />;
-      case 1:
-        return <AddCustomerScreen navigation={{ 
-          goBack: () => setCurrentTab(0),
-          navigate: (screen: string) => {
-            if (screen === 'Customers') setCurrentTab(0);
-          }
-        }} />;
-      case 2:
-        return <SettingsScreen />;
-      default:
-        return <CustomersScreenUpdated navigation={{ navigate: (screen: string) => {
-          if (screen === 'Add Customer') setCurrentTab(1);
-        }}} />;
+  React.useEffect(() => {
+    if (fontsLoaded) {
+      SplashScreen.hideAsync();
     }
+  }, [fontsLoaded]);
+
+  if (!fontsLoaded) return null;
+
+  const navigateTo = (screen: string) => {
+    const screenMap: Record<string, number> = {
+      'Add Customer': 1,
+      'Customers': 0,
+    };
+    if (screen in screenMap) setCurrentTab(screenMap[screen]);
+  };
+
+  const screens: Record<number, React.ReactNode> = {
+    0: <CustomersScreenUpdated navigation={{ navigate: navigateTo }} />,
+    1: <AddCustomerScreen navigation={{ goBack: () => setCurrentTab(0), navigate: navigateTo }} />,
+    2: <SettingsScreen />,
+  };
+
+  const handleTabPress = (tabKey: number) => {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    setCurrentTab(tabKey);
   };
 
   return (
-    <View style={styles.appContainer}>
-      <StatusBar style="light" backgroundColor={theme.colors.background} />
-      {renderCurrentScreen()}
-      
-      {/* Custom Tab Bar */}
-      <View style={styles.tabBar}>
-        <TouchableOpacity
-          style={[styles.tab, currentTab === 0 && styles.activeTab]}
-          onPress={() => setCurrentTab(0)}
-        >
-          <Ionicons 
-            name={currentTab === 0 ? 'people' : 'people-outline'} 
-            size={24} 
-            color={currentTab === 0 ? theme.colors.tabBarActive : theme.colors.tabBarInactive} 
-          />
-          <Text style={[
-            styles.tabText, 
-            { color: currentTab === 0 ? theme.colors.tabBarActive : theme.colors.tabBarInactive }
-          ]}>
-            Customers
-          </Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity
-          style={[styles.tab, currentTab === 1 && styles.activeTab]}
-          onPress={() => setCurrentTab(1)}
-        >
-          <Ionicons 
-            name={currentTab === 1 ? 'person-add' : 'person-add-outline'} 
-            size={24} 
-            color={currentTab === 1 ? theme.colors.tabBarActive : theme.colors.tabBarInactive} 
-          />
-          <Text style={[
-            styles.tabText, 
-            { color: currentTab === 1 ? theme.colors.tabBarActive : theme.colors.tabBarInactive }
-          ]}>
-            Add Customer
-          </Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity
-          style={[styles.tab, currentTab === 2 && styles.activeTab]}
-          onPress={() => setCurrentTab(2)}
-        >
-          <Ionicons 
-            name={currentTab === 2 ? 'settings' : 'settings-outline'} 
-            size={24} 
-            color={currentTab === 2 ? theme.colors.tabBarActive : theme.colors.tabBarInactive} 
-          />
-          <Text style={[
-            styles.tabText, 
-            { color: currentTab === 2 ? theme.colors.tabBarActive : theme.colors.tabBarInactive }
-          ]}>
-            Settings
-          </Text>
-        </TouchableOpacity>
+    <LinearGradient
+      colors={[colors.background, '#0D1425', '#0A1020', colors.background]}
+      locations={[0, 0.3, 0.7, 1]}
+      style={styles.appContainer}
+    >
+      <StatusBar style="light" translucent backgroundColor="transparent" />
+
+      <Animated.View key={currentTab} entering={FadeIn.duration(250)} style={{ flex: 1 }}>
+        {screens[currentTab] ?? screens[0]}
+      </Animated.View>
+
+      <View style={[styles.tabBarOuter, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+        {Platform.OS === 'web' ? (
+          <View style={[styles.tabBar, { backgroundColor: 'rgba(255,255,255,0.06)' }]}>
+            {TAB_CONFIG.map((tab) => (
+              <TouchableOpacity
+                key={tab.key}
+                style={styles.tab}
+                onPress={() => handleTabPress(tab.key)}
+              >
+                <Ionicons
+                  name={currentTab === tab.key ? tab.iconActive : tab.iconInactive}
+                  size={spacing['2xl']}
+                  color={currentTab === tab.key ? colors.tabBarActive : colors.tabBarInactive}
+                />
+                <Text style={[
+                  styles.tabText,
+                  { color: currentTab === tab.key ? colors.tabBarActive : colors.tabBarInactive }
+                ]}>
+                  {tab.label}
+                </Text>
+                {currentTab === tab.key && (
+                  <Animated.View entering={FadeIn.duration(200)} style={styles.tabIndicator} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : (
+          <BlurView intensity={40} tint="dark" style={styles.tabBar}>
+            {TAB_CONFIG.map((tab) => (
+              <PressableScale
+                key={tab.key}
+                style={styles.tab}
+                onPress={() => handleTabPress(tab.key)}
+                haptic={false}
+              >
+                <Ionicons
+                  name={currentTab === tab.key ? tab.iconActive : tab.iconInactive}
+                  size={spacing['2xl']}
+                  color={currentTab === tab.key ? colors.tabBarActive : colors.tabBarInactive}
+                />
+                <Text style={[
+                  styles.tabText,
+                  { color: currentTab === tab.key ? colors.tabBarActive : colors.tabBarInactive }
+                ]}>
+                  {tab.label}
+                </Text>
+                {currentTab === tab.key && (
+                  <Animated.View entering={FadeIn.duration(200)} style={styles.tabIndicator} />
+                )}
+              </PressableScale>
+            ))}
+          </BlurView>
+        )}
       </View>
-    </View>
+    </LinearGradient>
   );
 }
+
+// --- Styles ---
 
 const styles = StyleSheet.create({
   appContainer: {
     flex: 1,
-    backgroundColor: theme.colors.background,
   },
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+    backgroundColor: 'transparent',
   },
   keyboardView: {
     flex: 1,
@@ -703,291 +985,342 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.lg,
+    position: 'relative',
+  },
+  headerBorderGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 1,
   },
   backButton: {
-    padding: 4,
+    padding: spacing.xs,
   },
   title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: theme.colors.text,
+    fontSize: typography.size.xl,
+    fontFamily: typography.fontFamily.mono,
+    fontWeight: typography.weight.bold,
+    color: colors.text,
+    letterSpacing: 0.5,
   },
   placeholder: {
-    width: 32,
+    width: spacing['3xl'],
   },
   addButton: {
-    backgroundColor: theme.colors.primary,
-    borderRadius: 20,
-    width: 40,
-    height: 40,
+    borderRadius: radius.full,
+    width: spacing['4xl'],
+    height: spacing['4xl'],
     justifyContent: 'center',
     alignItems: 'center',
+  },
+
+  // Search
+  searchOuter: {
+    marginHorizontal: spacing.lg,
+    marginVertical: spacing.md,
+    borderRadius: radius.xl,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.surfaceBorder,
+    backgroundColor: colors.surface,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    margin: 16,
-    backgroundColor: theme.colors.surface,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    height: 48,
+    paddingHorizontal: spacing.lg,
+    height: spacing['5xl'],
   },
   searchIcon: {
-    marginRight: 12,
+    marginRight: spacing.md,
   },
   searchInput: {
     flex: 1,
-    color: theme.colors.text,
-    fontSize: 16,
+    color: colors.text,
+    fontSize: typography.size.md,
   },
+
+  // List
   listContainer: {
-    padding: 16,
+    padding: spacing.lg,
   },
-  customerCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+  customerCardOuter: {
+    marginBottom: spacing.lg,
   },
   customerHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 12,
+    marginBottom: spacing.md,
   },
   customerInfo: {
     flex: 1,
   },
   customerName: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-    marginBottom: 4,
+    fontSize: typography.size.lg,
+    fontFamily: typography.fontFamily.mono,
+    fontWeight: typography.weight.bold,
+    color: colors.text,
+    marginBottom: spacing.xs,
   },
   boatInfo: {
-    fontSize: 14,
-    color: theme.colors.primary,
+    fontSize: typography.size.base,
+    color: colors.primary,
     marginBottom: 2,
   },
   contactInfo: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
+    fontSize: typography.size.base,
+    color: colors.textSecondary,
   },
   customerMeta: {
     alignItems: 'flex-end',
+    gap: spacing.xs,
   },
-  imageCount: {
-    fontSize: 12,
-    color: theme.colors.textSecondary,
-    marginBottom: 2,
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
   },
-  noteCount: {
-    fontSize: 12,
-    color: theme.colors.textSecondary,
+  metaCount: {
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
   },
   jobStatusContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
   jobStatus: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: spacing.sm,
+    height: spacing.sm,
+    borderRadius: spacing.xs,
     marginRight: 6,
   },
   statusText: {
-    fontSize: 12,
-    color: theme.colors.textSecondary,
+    fontSize: typography.size.sm,
+    color: colors.textSecondary,
   },
   lastActivity: {
-    fontSize: 12,
-    color: theme.colors.textSecondary,
+    fontSize: typography.size.sm,
+    color: colors.textMuted,
     textAlign: 'right',
   },
+
+  // Center / Empty / Loading
   centerContent: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 40,
+    padding: spacing['4xl'],
   },
   loadingText: {
-    fontSize: 16,
-    color: theme.colors.textSecondary,
+    fontSize: typography.size.md,
+    color: colors.textSecondary,
+    marginTop: spacing.lg,
+  },
+  emptyIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.xl,
   },
   emptyTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-    marginTop: 16,
-    marginBottom: 8,
+    fontSize: typography.size.xl,
+    fontFamily: typography.fontFamily.mono,
+    fontWeight: typography.weight.bold,
+    color: colors.text,
+    marginBottom: spacing.sm,
     textAlign: 'center',
   },
   emptySubtitle: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
+    fontSize: typography.size.base,
+    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
   },
+
+  // Scroll / Form
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    padding: 20,
+    padding: spacing.xl,
   },
   section: {
-    marginBottom: 24,
+    marginBottom: spacing['2xl'],
+  },
+  sectionHeaderRow: {
+    marginBottom: spacing.lg,
+  },
+  sectionAccentLine: {
+    height: 2,
+    borderRadius: 1,
+    marginBottom: spacing.sm,
+    width: '40%',
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: theme.colors.primary,
-    marginBottom: 16,
+    fontSize: typography.size.sm,
+    fontFamily: typography.fontFamily.mono,
+    fontWeight: typography.weight.semibold,
+    color: colors.primary,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
   },
   inputContainer: {
-    marginBottom: 16,
+    marginBottom: spacing.lg,
+  },
+  inputWrapper: {
+    borderRadius: radius.md,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.surfaceBorder,
+    backgroundColor: colors.surface,
+  },
+  inputErrorBorder: {
+    borderColor: colors.error,
   },
   input: {
-    backgroundColor: theme.colors.surface,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: theme.colors.text,
-    minHeight: 48,
-  },
-  inputError: {
-    borderColor: theme.colors.error,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    fontSize: typography.size.md,
+    color: colors.text,
+    minHeight: spacing['5xl'],
   },
   errorText: {
-    color: theme.colors.error,
-    fontSize: 12,
-    marginTop: 4,
-    marginLeft: 4,
+    color: colors.error,
+    fontSize: typography.size.sm,
+    marginTop: spacing.xs,
+    marginLeft: spacing.xs,
   },
+
+  // Dropdown
   dropdownButton: {
-    backgroundColor: theme.colors.surface,
     borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    borderColor: colors.surfaceBorder,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    minHeight: 48,
+    minHeight: spacing['5xl'],
   },
   dropdownText: {
-    fontSize: 16,
-    color: theme.colors.text,
+    fontSize: typography.size.md,
+    color: colors.text,
   },
   placeholderText: {
-    color: theme.colors.textSecondary,
+    color: colors.textSecondary,
   },
-  dropdown: {
-    backgroundColor: theme.colors.surface,
+  dropdownWrapper: {
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: 12,
-    marginTop: 4,
+    borderColor: colors.surfaceBorder,
+    borderRadius: radius.md,
+    marginTop: spacing.xs,
     overflow: 'hidden',
   },
   dropdownOption: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
+    borderBottomColor: colors.surfaceBorder,
   },
   selectedOption: {
-    backgroundColor: theme.colors.primary + '20',
+    backgroundColor: withAlpha(colors.primary, 0.125),
   },
   dropdownOptionText: {
-    fontSize: 16,
-    color: theme.colors.text,
+    fontSize: typography.size.md,
+    color: colors.text,
   },
   selectedOptionText: {
-    color: theme.colors.primary,
-    fontWeight: '500',
+    color: colors.primary,
+    fontWeight: typography.weight.medium,
   },
+
+  // Submit
   submitButton: {
-    backgroundColor: theme.colors.primary,
-    borderRadius: 12,
-    paddingVertical: 16,
+    borderRadius: radius.md,
+    paddingVertical: spacing.lg,
     alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 32,
-  },
-  submitButtonDisabled: {
-    opacity: 0.6,
+    marginTop: spacing.sm,
+    marginBottom: spacing['3xl'],
   },
   submitButtonText: {
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: typography.size.lg,
+    fontFamily: typography.fontFamily.mono,
+    fontWeight: typography.weight.semibold,
     color: '#000',
+    letterSpacing: 0.5,
   },
-  optionCard: {
+
+  // Settings
+  optionCardOuter: {
+    marginBottom: spacing.sm,
+  },
+  optionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.colors.surface,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
   },
   optionIcon: {
-    marginRight: 16,
+    marginRight: spacing.lg,
   },
   optionContent: {
     flex: 1,
   },
   optionTitle: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: theme.colors.text,
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.medium,
+    color: colors.text,
     marginBottom: 2,
   },
   optionSubtitle: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
+    fontSize: typography.size.base,
+    color: colors.textSecondary,
   },
-  appInfo: {
-    padding: 20,
+  appInfoCard: {
+    marginTop: spacing.lg,
     alignItems: 'center',
   },
   logoContainer: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: spacing['2xl'],
+  },
+  logoGlow: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    position: 'absolute',
+    top: -16,
   },
   appName: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-    marginTop: 12,
-    marginBottom: 4,
+    fontSize: typography.size.xl,
+    fontFamily: typography.fontFamily.mono,
+    fontWeight: typography.weight.bold,
+    color: colors.text,
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+    letterSpacing: 0.5,
   },
   appVersion: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
+    fontSize: typography.size.base,
+    color: colors.textSecondary,
   },
   description: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
+    fontSize: typography.size.base,
+    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
-    marginBottom: 24,
+    marginBottom: spacing['2xl'],
   },
   features: {
     alignItems: 'flex-start',
@@ -995,33 +1328,40 @@ const styles = StyleSheet.create({
   featureItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
   featureText: {
-    fontSize: 14,
-    color: theme.colors.text,
-    marginLeft: 8,
+    fontSize: typography.size.base,
+    color: colors.text,
+    marginLeft: spacing.sm,
+  },
+
+  // Tab Bar
+  tabBarOuter: {
+    overflow: 'hidden',
+    borderTopWidth: 1,
+    borderTopColor: colors.surfaceBorder,
   },
   tabBar: {
     flexDirection: 'row',
-    backgroundColor: theme.colors.surface,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
-    paddingBottom: Platform.OS === 'ios' ? 20 : 10,
-    paddingTop: 10,
+    paddingTop: spacing.sm,
   },
   tab: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
-  },
-  activeTab: {
-    // Optional styling for active tab
+    paddingVertical: spacing.sm,
   },
   tabText: {
-    fontSize: 12,
-    marginTop: 4,
-    fontWeight: '500',
+    fontSize: typography.size.xs,
+    marginTop: spacing.xs,
+    fontWeight: typography.weight.medium,
+  },
+  tabIndicator: {
+    width: spacing.xs,
+    height: spacing.xs,
+    borderRadius: 2,
+    backgroundColor: colors.primary,
+    marginTop: spacing.xs,
   },
 });
