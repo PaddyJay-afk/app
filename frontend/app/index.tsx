@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
+
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useForm, Controller } from 'react-hook-form';
@@ -107,7 +107,12 @@ const colors = {
   tabBarInactive: '#6B7280',
 } as const;
 
+// RGB components of primary color for use in Reanimated animated styles
+const PRIMARY_RGB = '212,175,55';
+
 // --- Type Interfaces ---
+
+type PropType = 'stainless' | 'aluminum' | 'bronze';
 
 interface ScreenNavigation {
   navigate: (screen: string) => void;
@@ -142,7 +147,7 @@ interface Customer {
     horsepower?: string;
     hours?: string;
   };
-  prop_type?: 'stainless' | 'aluminum' | 'bronze';
+  prop_type?: PropType;
   images: {
     id: string;
     base64_data: string;
@@ -181,8 +186,14 @@ interface CustomerFormData {
   engine_model: string;
   engine_horsepower: string;
   engine_hours: string;
-  prop_type: 'stainless' | 'aluminum' | 'bronze' | '';
+  prop_type: PropType | '';
 }
+
+const JOB_STATUSES = [
+  { key: 'pending' as const, color: colors.pending, label: 'Pending' },
+  { key: 'inProgress' as const, color: colors.inProgress, label: 'In Progress' },
+  { key: 'completed' as const, color: colors.completed, label: 'Completed' },
+];
 
 const propTypes = [
   { label: 'Select Prop Type', value: '' },
@@ -281,6 +292,27 @@ const GlassCard = ({
   </View>
 );
 
+const HeaderBorderGradient = () => (
+  <LinearGradient
+    colors={[withAlpha(colors.primary, 0.4), 'transparent']}
+    start={{ x: 0, y: 0 }}
+    end={{ x: 1, y: 0 }}
+    style={styles.headerBorderGradient}
+  />
+);
+
+const SectionHeader = ({ title }: { title: string }) => (
+  <View style={styles.sectionHeaderRow}>
+    <LinearGradient
+      colors={[colors.primary, 'transparent']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 0 }}
+      style={styles.sectionAccentLine}
+    />
+    <Text style={styles.sectionTitle}>{title}</Text>
+  </View>
+);
+
 const LoadingPulse = () => {
   const opacity = useSharedValue(0.3);
 
@@ -311,6 +343,7 @@ const LoadingPulse = () => {
 function AddCustomerScreen({ navigation }: { navigation: ScreenNavigation }) {
   const [loading, setLoading] = useState(false);
   const [showPropPicker, setShowPropPicker] = useState(false);
+  const [focusedField, setFocusedField] = useState<string | null>(null);
 
   const { control, handleSubmit, reset, formState: { errors } } = useForm<CustomerFormData>({
     defaultValues: {
@@ -384,8 +417,6 @@ function AddCustomerScreen({ navigation }: { navigation: ScreenNavigation }) {
       setLoading(false);
     }
   };
-
-  const [focusedField, setFocusedField] = useState<string | null>(null);
 
   const renderInput = (
     name: keyof CustomerFormData,
@@ -476,18 +507,6 @@ function AddCustomerScreen({ navigation }: { navigation: ScreenNavigation }) {
     />
   );
 
-  const renderSectionHeader = (title: string) => (
-    <View style={styles.sectionHeaderRow}>
-      <LinearGradient
-        colors={[colors.primary, 'transparent']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.sectionAccentLine}
-      />
-      <Text style={styles.sectionTitle}>{title}</Text>
-    </View>
-  );
-
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
@@ -500,12 +519,7 @@ function AddCustomerScreen({ navigation }: { navigation: ScreenNavigation }) {
           </PressableScale>
           <Text style={styles.title}>Add Customer</Text>
           <View style={styles.placeholder} />
-          <LinearGradient
-            colors={[withAlpha(colors.primary, 0.4), 'transparent']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.headerBorderGradient}
-          />
+          <HeaderBorderGradient />
         </View>
 
         <ScrollView
@@ -515,14 +529,14 @@ function AddCustomerScreen({ navigation }: { navigation: ScreenNavigation }) {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.section}>
-            {renderSectionHeader('Customer Information')}
+            <SectionHeader title="Customer Information" />
             {renderInput('name', 'Customer Name *', { required: 'Name is required' })}
             {renderInput('phone', 'Phone Number', undefined, 'phone-pad')}
             {renderInput('address', 'Address')}
           </View>
 
           <View style={styles.section}>
-            {renderSectionHeader('Boat Information')}
+            <SectionHeader title="Boat Information" />
             {renderInput('boat_year', 'Boat Year', undefined, 'numeric')}
             {renderInput('boat_make', 'Boat Make')}
             {renderInput('boat_model', 'Boat Model')}
@@ -532,7 +546,7 @@ function AddCustomerScreen({ navigation }: { navigation: ScreenNavigation }) {
           </View>
 
           <View style={styles.section}>
-            {renderSectionHeader('Engine Information')}
+            <SectionHeader title="Engine Information" />
             {renderInput('engine_type', 'Engine Type')}
             {renderInput('engine_serial_number', 'Engine Serial Number')}
             {renderInput('engine_year', 'Engine Year', undefined, 'numeric')}
@@ -615,26 +629,13 @@ function SettingsScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Settings</Text>
-        <LinearGradient
-          colors={[withAlpha(colors.primary, 0.4), 'transparent']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.headerBorderGradient}
-        />
+        <HeaderBorderGradient />
       </View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <View style={styles.scrollContent}>
           <View style={styles.section}>
-            <View style={styles.sectionHeaderRow}>
-              <LinearGradient
-                colors={[colors.primary, 'transparent']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.sectionAccentLine}
-              />
-              <Text style={styles.sectionTitle}>General</Text>
-            </View>
+            <SectionHeader title="General" />
             {settingsOptions.map(renderSettingOption)}
           </View>
 
@@ -734,7 +735,7 @@ function CustomersScreenUpdated({ navigation }: { navigation: Pick<ScreenNavigat
   };
 
   const searchBorderStyle = useAnimatedStyle(() => ({
-    borderColor: `rgba(212, 175, 55, ${searchBorderOpacity.value})`,
+    borderColor: `rgba(${PRIMARY_RGB},${searchBorderOpacity.value})`,
   }));
 
   const renderCustomerCard = ({ item, index }: { item: Customer; index: number }) => {
@@ -766,18 +767,12 @@ function CustomersScreenUpdated({ navigation }: { navigation: Pick<ScreenNavigat
             </View>
 
             <View style={styles.jobStatusContainer}>
-              <View style={styles.jobStatus}>
-                <View style={[styles.statusDot, { backgroundColor: colors.pending }]} />
-                <Text style={styles.statusText}>{jobCounts.pending} Pending</Text>
-              </View>
-              <View style={styles.jobStatus}>
-                <View style={[styles.statusDot, { backgroundColor: colors.inProgress }]} />
-                <Text style={styles.statusText}>{jobCounts.inProgress} In Progress</Text>
-              </View>
-              <View style={styles.jobStatus}>
-                <View style={[styles.statusDot, { backgroundColor: colors.completed }]} />
-                <Text style={styles.statusText}>{jobCounts.completed} Completed</Text>
-              </View>
+              {JOB_STATUSES.map(({ key, color, label }) => (
+                <View key={key} style={styles.jobStatus}>
+                  <View style={[styles.statusDot, { backgroundColor: color }]} />
+                  <Text style={styles.statusText}>{jobCounts[key]} {label}</Text>
+                </View>
+              ))}
             </View>
 
             <Text style={styles.lastActivity}>
@@ -809,12 +804,7 @@ function CustomersScreenUpdated({ navigation }: { navigation: Pick<ScreenNavigat
             <Ionicons name="add" size={spacing['2xl']} color={colors.background} />
           </LinearGradient>
         </PressableScale>
-        <LinearGradient
-          colors={[withAlpha(colors.primary, 0.4), 'transparent']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.headerBorderGradient}
-        />
+        <HeaderBorderGradient />
       </View>
 
       <Animated.View style={[styles.searchOuter, searchBorderStyle]}>
@@ -918,6 +908,22 @@ export default function App() {
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
 
+  const navigateTo = useCallback((screen: string) => {
+    const screenMap: Record<string, number> = {
+      'Add Customer': 1,
+      'Customers': 0,
+    };
+    if (screen in screenMap) setCurrentTab(screenMap[screen]);
+  }, []);
+
+  const goBack = useCallback(() => setCurrentTab(0), []);
+
+  const screens = useMemo<Record<number, React.ReactNode>>(() => ({
+    0: <CustomersScreenUpdated navigation={{ navigate: navigateTo }} />,
+    1: <AddCustomerScreen navigation={{ goBack, navigate: navigateTo }} />,
+    2: <SettingsScreen />,
+  }), [navigateTo, goBack]);
+
   React.useEffect(() => {
     if (fontsLoaded) {
       SplashScreen.hideAsync();
@@ -925,20 +931,6 @@ export default function App() {
   }, [fontsLoaded]);
 
   if (!fontsLoaded) return null;
-
-  const navigateTo = (screen: string) => {
-    const screenMap: Record<string, number> = {
-      'Add Customer': 1,
-      'Customers': 0,
-    };
-    if (screen in screenMap) setCurrentTab(screenMap[screen]);
-  };
-
-  const screens: Record<number, React.ReactNode> = {
-    0: <CustomersScreenUpdated navigation={{ navigate: navigateTo }} />,
-    1: <AddCustomerScreen navigation={{ goBack: () => setCurrentTab(0), navigate: navigateTo }} />,
-    2: <SettingsScreen />,
-  };
 
   const handleTabPress = (tabKey: number) => {
     if (Platform.OS !== 'web') {
@@ -953,44 +945,44 @@ export default function App() {
       locations={[0, 0.3, 0.7, 1]}
       style={styles.appContainer}
     >
-      <StatusBar style="light" translucent backgroundColor="transparent" />
-
       <Animated.View key={currentTab} entering={FadeIn.duration(250)} style={{ flex: 1 }}>
         {screens[currentTab] ?? screens[0]}
       </Animated.View>
 
       <View style={[styles.tabBarOuter, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-        {Platform.OS === 'web' ? (
-          <View style={[styles.tabBar, { backgroundColor: 'rgba(255,255,255,0.06)' }]}>
-            {TAB_CONFIG.map((tab) => (
+        {(() => {
+          const isWeb = Platform.OS === 'web';
+          const tabItems = TAB_CONFIG.map((tab) => {
+            const isActive = currentTab === tab.key;
+            const tabColor = isActive ? colors.tabBarActive : colors.tabBarInactive;
+            const content = (
+              <>
+                <Ionicons
+                  name={isActive ? tab.iconActive : tab.iconInactive}
+                  size={spacing['2xl']}
+                  color={tabColor}
+                />
+                <Text style={[styles.tabText, { color: tabColor }]}>
+                  {tab.label}
+                </Text>
+                {isActive && (
+                  <Animated.View entering={FadeIn.duration(200)} style={styles.tabIndicator} />
+                )}
+              </>
+            );
+
+            return isWeb ? (
               <TouchableOpacity
                 key={tab.key}
                 style={styles.tab}
                 onPress={() => handleTabPress(tab.key)}
                 accessibilityRole="tab"
                 accessibilityLabel={tab.label}
-                accessibilityState={{ selected: currentTab === tab.key }}
+                accessibilityState={{ selected: isActive }}
               >
-                <Ionicons
-                  name={currentTab === tab.key ? tab.iconActive : tab.iconInactive}
-                  size={spacing['2xl']}
-                  color={currentTab === tab.key ? colors.tabBarActive : colors.tabBarInactive}
-                />
-                <Text style={[
-                  styles.tabText,
-                  { color: currentTab === tab.key ? colors.tabBarActive : colors.tabBarInactive }
-                ]}>
-                  {tab.label}
-                </Text>
-                {currentTab === tab.key && (
-                  <Animated.View entering={FadeIn.duration(200)} style={styles.tabIndicator} />
-                )}
+                {content}
               </TouchableOpacity>
-            ))}
-          </View>
-        ) : (
-          <BlurView intensity={40} tint="dark" style={styles.tabBar}>
-            {TAB_CONFIG.map((tab) => (
+            ) : (
               <PressableScale
                 key={tab.key}
                 style={styles.tab}
@@ -999,24 +991,21 @@ export default function App() {
                 accessibilityRole="tab"
                 accessibilityLabel={tab.label}
               >
-                <Ionicons
-                  name={currentTab === tab.key ? tab.iconActive : tab.iconInactive}
-                  size={spacing['2xl']}
-                  color={currentTab === tab.key ? colors.tabBarActive : colors.tabBarInactive}
-                />
-                <Text style={[
-                  styles.tabText,
-                  { color: currentTab === tab.key ? colors.tabBarActive : colors.tabBarInactive }
-                ]}>
-                  {tab.label}
-                </Text>
-                {currentTab === tab.key && (
-                  <Animated.View entering={FadeIn.duration(200)} style={styles.tabIndicator} />
-                )}
+                {content}
               </PressableScale>
-            ))}
-          </BlurView>
-        )}
+            );
+          });
+
+          return isWeb ? (
+            <View style={[styles.tabBar, { backgroundColor: colors.surface }]}>
+              {tabItems}
+            </View>
+          ) : (
+            <BlurView intensity={40} tint="dark" style={styles.tabBar}>
+              {tabItems}
+            </BlurView>
+          );
+        })()}
       </View>
     </LinearGradient>
   );
