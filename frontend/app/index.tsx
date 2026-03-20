@@ -95,7 +95,7 @@ const colors = {
   elevated: 'rgba(255,255,255,0.12)',
   text: '#FFFFFF',
   textSecondary: '#A0A8B8',
-  textMuted: '#6B7280',
+  textMuted: '#8B95A8',
   success: '#4CAF50',
   warning: '#FF9800',
   error: '#F44336',
@@ -143,25 +143,25 @@ interface Customer {
     hours?: string;
   };
   prop_type?: 'stainless' | 'aluminum' | 'bronze';
-  images: Array<{
+  images: {
     id: string;
     base64_data: string;
     description?: string;
     timestamp: string;
-  }>;
-  jobs: Array<{
+  }[];
+  jobs: {
     id: string;
     description: string;
     status: 'pending' | 'in_progress' | 'completed';
     created_at: string;
     updated_at: string;
-  }>;
-  notes: Array<{
+  }[];
+  notes: {
     id: string;
     content: string;
     author: string;
     timestamp: string;
-  }>;
+  }[];
   last_activity: string;
 }
 
@@ -201,12 +201,18 @@ const PressableScale = ({
   style,
   disabled,
   haptic = true,
+  accessibilityLabel,
+  accessibilityRole,
+  accessibilityHint,
 }: {
   children: React.ReactNode;
   onPress?: () => void;
   style?: object | object[];
   disabled?: boolean;
   haptic?: boolean;
+  accessibilityLabel?: string;
+  accessibilityRole?: 'button' | 'link' | 'tab' | 'none';
+  accessibilityHint?: string;
 }) => {
   const scale = useSharedValue(1);
   const animatedStyle = useAnimatedStyle(() => ({
@@ -230,6 +236,9 @@ const PressableScale = ({
       }}
       activeOpacity={0.9}
       disabled={disabled}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole={accessibilityRole ?? 'button'}
+      accessibilityHint={accessibilityHint}
     >
       {children}
     </AnimatedTouchable>
@@ -376,6 +385,8 @@ function AddCustomerScreen({ navigation }: { navigation: ScreenNavigation }) {
     }
   };
 
+  const [focusedField, setFocusedField] = useState<string | null>(null);
+
   const renderInput = (
     name: keyof CustomerFormData,
     placeholder: string,
@@ -388,15 +399,21 @@ function AddCustomerScreen({ navigation }: { navigation: ScreenNavigation }) {
       rules={rules}
       render={({ field: { onChange, onBlur, value } }) => (
         <View style={styles.inputContainer}>
-          <View style={[styles.inputWrapper, errors[name] && styles.inputErrorBorder]}>
+          <View style={[
+            styles.inputWrapper,
+            focusedField === name && styles.inputFocusBorder,
+            errors[name] && styles.inputErrorBorder,
+          ]}>
             <TextInput
               style={styles.input}
               placeholder={placeholder}
               placeholderTextColor={colors.textSecondary}
-              onBlur={onBlur}
+              onBlur={() => { setFocusedField(null); onBlur(); }}
+              onFocus={() => setFocusedField(name)}
               onChangeText={onChange}
               value={value}
               keyboardType={keyboardType ?? 'default'}
+              accessibilityLabel={placeholder.replace(' *', '')}
             />
           </View>
           {errors[name] && (
@@ -416,6 +433,9 @@ function AddCustomerScreen({ navigation }: { navigation: ScreenNavigation }) {
           <TouchableOpacity
             style={styles.dropdownButton}
             onPress={() => setShowPropPicker(!showPropPicker)}
+            accessibilityRole="combobox"
+            accessibilityLabel="Prop type selector"
+            accessibilityHint="Opens prop type dropdown"
           >
             <Text style={[styles.dropdownText, !value && styles.placeholderText]}>
               {value ? propTypes.find(p => p.value === value)?.label : 'Select Prop Type'}
@@ -475,7 +495,7 @@ function AddCustomerScreen({ navigation }: { navigation: ScreenNavigation }) {
         style={styles.keyboardView}
       >
         <View style={styles.header}>
-          <PressableScale onPress={() => navigation.goBack()} style={styles.backButton}>
+          <PressableScale onPress={() => navigation.goBack()} style={styles.backButton} accessibilityLabel="Go back" accessibilityRole="button">
             <Ionicons name="arrow-back" size={spacing['2xl']} color={colors.text} />
           </PressableScale>
           <Text style={styles.title}>Add Customer</Text>
@@ -492,6 +512,7 @@ function AddCustomerScreen({ navigation }: { navigation: ScreenNavigation }) {
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
           <View style={styles.section}>
             {renderSectionHeader('Customer Information')}
@@ -525,6 +546,8 @@ function AddCustomerScreen({ navigation }: { navigation: ScreenNavigation }) {
             onPress={handleSubmit(onSubmit)}
             disabled={loading}
             style={loading ? { opacity: 0.6 } : undefined}
+            accessibilityLabel={loading ? 'Adding customer' : 'Add customer'}
+            accessibilityHint="Submits the customer form"
           >
             <LinearGradient
               colors={[colors.primary, colors.primaryDark]}
@@ -600,7 +623,7 @@ function SettingsScreen() {
         />
       </View>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <View style={styles.scrollContent}>
           <View style={styles.section}>
             <View style={styles.sectionHeaderRow}>
@@ -658,6 +681,7 @@ function CustomersScreenUpdated({ navigation }: { navigation: Pick<ScreenNavigat
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
+  const [fetchError, setFetchError] = useState(false);
   const searchBorderOpacity = useSharedValue(0);
 
   const filteredCustomers = useMemo(() => {
@@ -670,15 +694,18 @@ function CustomersScreenUpdated({ navigation }: { navigation: Pick<ScreenNavigat
   }, [customers, searchQuery]);
 
   const fetchCustomers = async () => {
+    setFetchError(false);
     try {
       const response = await fetch(`${API_BASE_URL}/api/customers`);
       if (response.ok) {
         const data = await response.json();
         setCustomers(data);
+      } else {
+        setFetchError(true);
       }
     } catch (error) {
       console.error('Error fetching customers:', error);
-      Alert.alert('Error', 'Failed to load customers');
+      setFetchError(true);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -774,12 +801,12 @@ function CustomersScreenUpdated({ navigation }: { navigation: Pick<ScreenNavigat
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Customers</Text>
-        <PressableScale onPress={() => navigation.navigate('Add Customer')}>
+        <PressableScale onPress={() => navigation.navigate('Add Customer')} accessibilityLabel="Add new customer" accessibilityHint="Opens the add customer form">
           <LinearGradient
             colors={[colors.primary, colors.primaryDark]}
             style={styles.addButton}
           >
-            <Ionicons name="add" size={spacing['2xl']} color="#000" />
+            <Ionicons name="add" size={spacing['2xl']} color={colors.background} />
           </LinearGradient>
         </PressableScale>
         <LinearGradient
@@ -804,6 +831,9 @@ function CustomersScreenUpdated({ navigation }: { navigation: Pick<ScreenNavigat
             placeholderTextColor={colors.textSecondary}
             value={searchQuery}
             onChangeText={setSearchQuery}
+            returnKeyType="search"
+            accessibilityLabel="Search customers and boats"
+            accessibilityHint="Type to filter customers by name, boat make, or model"
             onFocus={() => {
               setSearchFocused(true);
               searchBorderOpacity.value = withTiming(0.6, { duration: 200 });
@@ -816,7 +846,25 @@ function CustomersScreenUpdated({ navigation }: { navigation: Pick<ScreenNavigat
         </View>
       </Animated.View>
 
-      {filteredCustomers.length === 0 ? (
+      {fetchError && !refreshing ? (
+        <Animated.View entering={FadeIn.duration(400)} style={styles.centerContent}>
+          <Ionicons name="cloud-offline" size={spacing['5xl']} color={colors.error} />
+          <Text style={styles.emptyTitle}>Connection Error</Text>
+          <Text style={styles.emptySubtitle}>Could not load customers. Check your connection and try again.</Text>
+          <PressableScale
+            onPress={() => { setLoading(true); fetchCustomers(); }}
+            accessibilityLabel="Retry loading customers"
+          >
+            <LinearGradient
+              colors={[colors.primary, colors.primaryDark]}
+              style={styles.retryButton}
+            >
+              <Ionicons name="refresh" size={spacing.xl} color={colors.background} />
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </LinearGradient>
+          </PressableScale>
+        </Animated.View>
+      ) : filteredCustomers.length === 0 ? (
         <Animated.View entering={FadeIn.duration(400)} style={styles.centerContent}>
           <View style={styles.emptyIconContainer}>
             <LinearGradient
@@ -838,6 +886,7 @@ function CustomersScreenUpdated({ navigation }: { navigation: Pick<ScreenNavigat
           renderItem={renderCustomerCard}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContainer}
+          keyboardShouldPersistTaps="handled"
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -918,6 +967,9 @@ export default function App() {
                 key={tab.key}
                 style={styles.tab}
                 onPress={() => handleTabPress(tab.key)}
+                accessibilityRole="tab"
+                accessibilityLabel={tab.label}
+                accessibilityState={{ selected: currentTab === tab.key }}
               >
                 <Ionicons
                   name={currentTab === tab.key ? tab.iconActive : tab.iconInactive}
@@ -944,6 +996,8 @@ export default function App() {
                 style={styles.tab}
                 onPress={() => handleTabPress(tab.key)}
                 haptic={false}
+                accessibilityRole="tab"
+                accessibilityLabel={tab.label}
               >
                 <Ionicons
                   name={currentTab === tab.key ? tab.iconActive : tab.iconInactive}
@@ -997,7 +1051,11 @@ const styles = StyleSheet.create({
     height: 1,
   },
   backButton: {
-    padding: spacing.xs,
+    padding: spacing.sm,
+    minWidth: 44,
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   title: {
     fontSize: typography.size.xl,
@@ -1011,8 +1069,8 @@ const styles = StyleSheet.create({
   },
   addButton: {
     borderRadius: radius.full,
-    width: spacing['4xl'],
-    height: spacing['4xl'],
+    width: 44,
+    height: 44,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1068,7 +1126,7 @@ const styles = StyleSheet.create({
   boatInfo: {
     fontSize: typography.size.base,
     color: colors.primary,
-    marginBottom: 2,
+    marginBottom: spacing.xs,
   },
   contactInfo: {
     fontSize: typography.size.base,
@@ -1100,7 +1158,7 @@ const styles = StyleSheet.create({
     width: spacing.sm,
     height: spacing.sm,
     borderRadius: spacing.xs,
-    marginRight: 6,
+    marginRight: spacing.sm,
   },
   statusText: {
     fontSize: typography.size.sm,
@@ -1144,7 +1202,21 @@ const styles = StyleSheet.create({
     fontSize: typography.size.base,
     color: colors.textSecondary,
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: typography.size.base * 1.5,
+  },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing['2xl'],
+    borderRadius: radius.md,
+    marginTop: spacing.xl,
+    gap: spacing.sm,
+  },
+  retryButtonText: {
+    fontSize: typography.size.md,
+    fontWeight: typography.weight.semibold,
+    color: colors.background,
   },
 
   // Scroll / Form
@@ -1183,6 +1255,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.surfaceBorder,
     backgroundColor: colors.surface,
+  },
+  inputFocusBorder: {
+    borderColor: withAlpha(colors.primary, 0.5),
   },
   inputErrorBorder: {
     borderColor: colors.error,
@@ -1234,6 +1309,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.surfaceBorder,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   selectedOption: {
     backgroundColor: withAlpha(colors.primary, 0.125),
@@ -1259,7 +1336,7 @@ const styles = StyleSheet.create({
     fontSize: typography.size.lg,
     fontFamily: typography.fontFamily.mono,
     fontWeight: typography.weight.semibold,
-    color: '#000',
+    color: colors.background,
     letterSpacing: 0.5,
   },
 
@@ -1281,7 +1358,7 @@ const styles = StyleSheet.create({
     fontSize: typography.size.md,
     fontWeight: typography.weight.medium,
     color: colors.text,
-    marginBottom: 2,
+    marginBottom: spacing.xs,
   },
   optionSubtitle: {
     fontSize: typography.size.base,
@@ -1319,7 +1396,7 @@ const styles = StyleSheet.create({
     fontSize: typography.size.base,
     color: colors.textSecondary,
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: typography.size.base * 1.5,
     marginBottom: spacing['2xl'],
   },
   features: {
@@ -1351,6 +1428,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: spacing.sm,
+    minHeight: 48,
   },
   tabText: {
     fontSize: typography.size.xs,
