@@ -1,15 +1,12 @@
 import { drizzle } from "drizzle-orm/mysql2";
 import { films, streamingPlatforms } from "./drizzle/schema.js";
-
+Show less
 const DATABASE_URL = process.env.DATABASE_URL;
-
 if (!DATABASE_URL) {
   console.error("DATABASE_URL not set");
   process.exit(1);
 }
-
 const db = drizzle(DATABASE_URL);
-
 const platformsData = [
   { name: "Tubi", slug: "tubi", color: "#FF0000" },
   { name: "HBO Max", slug: "hbo-max", color: "#9E1B32" },
@@ -23,7 +20,6 @@ const platformsData = [
   { name: "MGM+", slug: "mgm-plus", color: "#FFA500" },
   { name: "Starz", slug: "starz", color: "#000000" },
 ];
-
 const filmsData = [
   {
     title: "Under the Silver Lake",
@@ -292,21 +288,17 @@ const filmsData = [
     runtime: 91,
   },
 ];
-
 async function seed() {
   try {
     console.log("Starting database seed...");
-
     console.log("Inserting streaming platforms...");
     for (const platform of platformsData) {
       await db.insert(streamingPlatforms).values(platform).catch(() => {});
     }
-
     console.log("Inserting films...");
     for (const film of filmsData) {
       await db.insert(films).values(film).catch(() => {});
     }
-
     console.log("Seed completed successfully!");
     process.exit(0);
   } catch (error) {
@@ -314,5 +306,4 @@ async function seed() {
     process.exit(1);
   }
 }
-
 seed();
