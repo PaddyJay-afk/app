@@ -1,1367 +1,460 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  TextInput,
-  RefreshControl,
   Alert,
+  FlatList,
   ScrollView,
-  KeyboardAvoidingView,
-  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  useWindowDimensions,
 } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { useForm, Controller } from 'react-hook-form';
-import type { RegisterOptions } from 'react-hook-form';
-import type { KeyboardTypeOptions } from 'react-native';
-import { BlurView } from 'expo-blur';
-import { LinearGradient } from 'expo-linear-gradient';
-import * as Font from 'expo-font';
-import * as SplashScreen from 'expo-splash-screen';
-import * as Haptics from 'expo-haptics';
-import Animated, {
-  FadeIn,
-  FadeInDown,
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-  withTiming,
-  withRepeat,
-  Easing,
-} from 'react-native-reanimated';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
-
-// --- Design Tokens ---
-
-const withAlpha = (hex: string, alpha: number): string => {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-};
-
-const spacing = {
-  xs: 4,
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 20,
-  '2xl': 24,
-  '3xl': 32,
-  '4xl': 40,
-  '5xl': 48,
-} as const;
-
-const typography = {
-  fontFamily: {
-    mono: 'SpaceMono',
-  },
-  size: {
-    xs: 11,
-    sm: 12,
-    base: 14,
-    md: 16,
-    lg: 18,
-    xl: 20,
-    '2xl': 24,
-  },
-  weight: {
-    regular: '400' as const,
-    medium: '500' as const,
-    semibold: '600' as const,
-    bold: '700' as const,
-  },
-} as const;
-
-const radius = {
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 20,
-  full: 9999,
-} as const;
+const API_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000/api';
 
 const colors = {
-  primary: '#D4AF37',
-  primaryDark: '#B8962E',
-  background: '#0A0E1A',
-  surface: 'rgba(255,255,255,0.08)',
-  surfaceBorder: 'rgba(255,255,255,0.12)',
-  elevated: 'rgba(255,255,255,0.12)',
-  text: '#FFFFFF',
-  textSecondary: '#A0A8B8',
-  textMuted: '#6B7280',
-  success: '#4CAF50',
-  warning: '#FF9800',
-  error: '#F44336',
-  info: '#2196F3',
-  pending: '#FF9800',
-  inProgress: '#2196F3',
-  completed: '#4CAF50',
-  tabBarActive: '#D4AF37',
-  tabBarInactive: '#6B7280',
-} as const;
-
-// --- Type Interfaces ---
-
-interface ScreenNavigation {
-  navigate: (screen: string) => void;
-  goBack: () => void;
-}
-
-interface SettingOption {
-  title: string;
-  subtitle: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  onPress: () => void;
-}
-
-interface Customer {
-  id: string;
-  name: string;
-  phone?: string;
-  address?: string;
-  boat: {
-    year?: string;
-    make?: string;
-    model?: string;
-    length?: string;
-    hin?: string;
-  };
-  engine: {
-    engine_type?: string;
-    serial_number?: string;
-    year?: string;
-    make?: string;
-    model?: string;
-    horsepower?: string;
-    hours?: string;
-  };
-  prop_type?: 'stainless' | 'aluminum' | 'bronze';
-  images: Array<{
-    id: string;
-    base64_data: string;
-    description?: string;
-    timestamp: string;
-  }>;
-  jobs: Array<{
-    id: string;
-    description: string;
-    status: 'pending' | 'in_progress' | 'completed';
-    created_at: string;
-    updated_at: string;
-  }>;
-  notes: Array<{
-    id: string;
-    content: string;
-    author: string;
-    timestamp: string;
-  }>;
-  last_activity: string;
-}
-
-interface CustomerFormData {
-  name: string;
-  phone: string;
-  address: string;
-  boat_year: string;
-  boat_make: string;
-  boat_model: string;
-  boat_length: string;
-  boat_hin: string;
-  engine_type: string;
-  engine_serial_number: string;
-  engine_year: string;
-  engine_make: string;
-  engine_model: string;
-  engine_horsepower: string;
-  engine_hours: string;
-  prop_type: 'stainless' | 'aluminum' | 'bronze' | '';
-}
-
-const propTypes = [
-  { label: 'Select Prop Type', value: '' },
-  { label: 'Stainless Steel', value: 'stainless' },
-  { label: 'Aluminum', value: 'aluminum' },
-  { label: 'Bronze', value: 'bronze' },
-];
-
-// --- Reusable Components ---
-
-const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
-
-const PressableScale = ({
-  children,
-  onPress,
-  style,
-  disabled,
-  haptic = true,
-}: {
-  children: React.ReactNode;
-  onPress?: () => void;
-  style?: object | object[];
-  disabled?: boolean;
-  haptic?: boolean;
-}) => {
-  const scale = useSharedValue(1);
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  return (
-    <AnimatedTouchable
-      style={[style, animatedStyle]}
-      onPressIn={() => {
-        scale.value = withSpring(0.96, { damping: 15, stiffness: 300 });
-      }}
-      onPressOut={() => {
-        scale.value = withSpring(1, { damping: 15, stiffness: 300 });
-      }}
-      onPress={() => {
-        if (haptic && Platform.OS !== 'web') {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        }
-        onPress?.();
-      }}
-      activeOpacity={0.9}
-      disabled={disabled}
-    >
-      {children}
-    </AnimatedTouchable>
-  );
+  navy: '#081826',
+  blue: '#1f7ae0',
+  white: '#ffffff',
+  light: '#f2f5f8',
+  gray: '#7d8790',
+  border: '#d9e1e8',
 };
 
-const GlassCard = ({
-  children,
-  style,
-  intensity = 25,
-  cardRadius = radius.lg,
-}: {
-  children: React.ReactNode;
-  style?: object;
-  intensity?: number;
-  cardRadius?: number;
-}) => (
-  <View style={[{
-    borderRadius: cardRadius,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.surfaceBorder,
-  }, style]}>
-    {Platform.OS === 'web' ? (
-      <View style={{
-        padding: spacing.lg,
-        backgroundColor: 'rgba(255,255,255,0.06)',
-      }}>
-        {children}
-      </View>
-    ) : (
-      <BlurView
-        intensity={intensity}
-        tint="dark"
-        style={{ padding: spacing.lg }}
-      >
-        {children}
-      </BlurView>
-    )}
+const urgencyOptions = ['stranded/on water', 'taking on water', 'boat unusable', 'trip planned soon', 'normal service', 'not urgent'];
+const categoryOptions = [
+  'no start/no crank',
+  'cranks but won’t start',
+  'starts then stalls',
+  'rough running',
+  'overheating',
+  'alarm/limp mode',
+  'low power/won’t plane',
+  'vibration',
+  'fuel issue',
+  'electrical issue',
+  'battery/charging',
+  'steering/controls',
+  'leak/taking on water',
+  'maintenance',
+  'winterization',
+  'spring commissioning',
+  'electronics install',
+  'other',
+];
+
+const statusOptions = ['New', 'Reviewed', 'Contacted', 'Scheduled', 'Converted', 'Closed', 'Spam'];
+
+type IntakeData = Record<string, any>;
+
+const blankIntake: IntakeData = {
+  customerName: '',
+  customerPhone: '',
+  customerEmail: '',
+  preferredContactMethod: 'call',
+  bestCallbackTime: '',
+  customerType: 'new',
+  boatYear: '',
+  boatMake: '',
+  boatModel: '',
+  boatLocationType: 'on trailer',
+  boatLocationDetails: '',
+  hullOrRegistration: '',
+  engineType: 'unknown',
+  engineBrand: 'unknown',
+  engineModel: '',
+  engineHours: '',
+  engineCount: 'single',
+  problemCategory: categoryOptions[0],
+  issueDescription: '',
+  startTimeDescription: '',
+  precedingEvent: '',
+  engineRuns: '',
+  alarmsOrCodes: '',
+  recentService: '',
+  fuelInfo: '',
+  batteryInfo: '',
+  urgency: 'normal service',
+  disclaimerAccepted: false,
+  uploadedFiles: [],
+  honeypot: '',
+};
+
+const LabeledInput = ({ label, value, onChangeText, placeholder = '' }: any) => (
+  <View style={styles.field}>
+    <Text style={styles.label}>{label}</Text>
+    <TextInput value={value} onChangeText={onChangeText} placeholder={placeholder} style={styles.input} placeholderTextColor={colors.gray} />
   </View>
 );
 
-const LoadingPulse = () => {
-  const opacity = useSharedValue(0.3);
-
-  React.useEffect(() => {
-    opacity.value = withRepeat(
-      withTiming(1, { duration: 800, easing: Easing.inOut(Easing.ease) }),
-      -1,
-      true
-    );
-  }, [opacity]);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-  }));
-
-  return (
-    <View style={styles.centerContent}>
-      <Animated.View style={animatedStyle}>
-        <Ionicons name="boat" size={spacing['5xl']} color={colors.primary} />
-      </Animated.View>
-      <Text style={styles.loadingText}>Loading...</Text>
+const SelectButtons = ({ label, value, options, onChange }: any) => (
+  <View style={styles.field}>
+    <Text style={styles.label}>{label}</Text>
+    <View style={styles.pillWrap}>
+      {options.map((option: string) => (
+        <TouchableOpacity key={option} onPress={() => onChange(option)} style={[styles.pill, value === option && styles.pillActive]}>
+          <Text style={[styles.pillText, value === option && styles.pillTextActive]}>{option}</Text>
+        </TouchableOpacity>
+      ))}
     </View>
-  );
-};
+  </View>
+);
 
-// --- Screen Components ---
+export default function Index() {
+  const [mode, setMode] = useState<'start' | 'intake' | 'admin'>('start');
+  const [step, setStep] = useState(0);
+  const [intake, setIntake] = useState<IntakeData>(blankIntake);
+  const [config, setConfig] = useState<any>({ disclaimerText: 'For immediate emergencies, call 911 or local marine emergency services.' });
+  const [confirmation, setConfirmation] = useState<any>(null);
 
-function AddCustomerScreen({ navigation }: { navigation: ScreenNavigation }) {
-  const [loading, setLoading] = useState(false);
-  const [showPropPicker, setShowPropPicker] = useState(false);
+  const [email, setEmail] = useState('owner@lakeready.local');
+  const [password, setPassword] = useState('LakeReady123!');
+  const [token, setToken] = useState('');
+  const [requests, setRequests] = useState<any[]>([]);
+  const [activeRequest, setActiveRequest] = useState<any>(null);
+  const [digest, setDigest] = useState('');
+  const [settings, setSettings] = useState<any>(null);
+  const [adminTab, setAdminTab] = useState<'dashboard' | 'digest' | 'settings'>('dashboard');
+  const { width } = useWindowDimensions();
 
-  const { control, handleSubmit, reset, formState: { errors } } = useForm<CustomerFormData>({
-    defaultValues: {
-      name: '',
-      phone: '',
-      address: '',
-      boat_year: '',
-      boat_make: '',
-      boat_model: '',
-      boat_length: '',
-      boat_hin: '',
-      engine_type: '',
-      engine_serial_number: '',
-      engine_year: '',
-      engine_make: '',
-      engine_model: '',
-      engine_horsepower: '',
-      engine_hours: '',
-      prop_type: '',
-    }
-  });
+  const isMobile = width < 900;
 
-  const onSubmit = async (data: CustomerFormData) => {
-    setLoading(true);
-    try {
-      const customerData = {
-        name: data.name,
-        phone: data.phone || null,
-        address: data.address || null,
-        boat: {
-          year: data.boat_year || null,
-          make: data.boat_make || null,
-          model: data.boat_model || null,
-          length: data.boat_length || null,
-          hin: data.boat_hin || null,
-        },
-        engine: {
-          engine_type: data.engine_type || null,
-          serial_number: data.engine_serial_number || null,
-          year: data.engine_year || null,
-          make: data.engine_make || null,
-          model: data.engine_model || null,
-          horsepower: data.engine_horsepower || null,
-          hours: data.engine_hours || null,
-        },
-        prop_type: data.prop_type || null,
-      };
-
-      const response = await fetch(`${API_BASE_URL}/api/customers`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(customerData),
-      });
-
-      if (response.ok) {
-        Alert.alert(
-          'Success',
-          'Customer added successfully!',
-          [
-            { text: 'Add Another', onPress: () => reset() },
-            { text: 'View Customers', onPress: () => navigation.navigate('Customers') },
-          ]
-        );
-      } else {
-        throw new Error('Failed to add customer');
-      }
-    } catch (error) {
-      console.error('Error adding customer:', error);
-      Alert.alert('Error', 'Failed to add customer. Please try again.');
-    } finally {
-      setLoading(false);
-    }
+  const fetchPublic = async () => {
+    const res = await fetch(`${API_BASE_URL}/public/config`);
+    setConfig(await res.json());
   };
 
-  const renderInput = (
-    name: keyof CustomerFormData,
-    placeholder: string,
-    rules?: RegisterOptions<CustomerFormData>,
-    keyboardType?: KeyboardTypeOptions
-  ) => (
-    <Controller
-      control={control}
-      name={name}
-      rules={rules}
-      render={({ field: { onChange, onBlur, value } }) => (
-        <View style={styles.inputContainer}>
-          <View style={[styles.inputWrapper, errors[name] && styles.inputErrorBorder]}>
-            <TextInput
-              style={styles.input}
-              placeholder={placeholder}
-              placeholderTextColor={colors.textSecondary}
-              onBlur={onBlur}
-              onChangeText={onChange}
-              value={value}
-              keyboardType={keyboardType ?? 'default'}
-            />
-          </View>
-          {errors[name] && (
-            <Text style={styles.errorText}>{errors[name]?.message}</Text>
-          )}
-        </View>
-      )}
-    />
-  );
+  useEffect(() => {
+    fetchPublic();
+  }, []);
 
-  const renderPropTypePicker = () => (
-    <Controller
-      control={control}
-      name="prop_type"
-      render={({ field: { onChange, value } }) => (
-        <View style={styles.inputContainer}>
-          <TouchableOpacity
-            style={styles.dropdownButton}
-            onPress={() => setShowPropPicker(!showPropPicker)}
-          >
-            <Text style={[styles.dropdownText, !value && styles.placeholderText]}>
-              {value ? propTypes.find(p => p.value === value)?.label : 'Select Prop Type'}
-            </Text>
-            <Ionicons
-              name={showPropPicker ? 'chevron-up' : 'chevron-down'}
-              size={spacing.xl}
-              color={colors.textSecondary}
-            />
-          </TouchableOpacity>
+  const update = (key: string, value: any) => setIntake((p) => ({ ...p, [key]: value }));
 
-          {showPropPicker && (
-            <View style={styles.dropdownWrapper}>
-              {propTypes.map((prop) => (
-                <TouchableOpacity
-                  key={prop.value || 'empty'}
-                  style={[
-                    styles.dropdownOption,
-                    value === prop.value && styles.selectedOption
-                  ]}
-                  onPress={() => {
-                    onChange(prop.value);
-                    setShowPropPicker(false);
-                  }}
-                >
-                  <Text style={[
-                    styles.dropdownOptionText,
-                    value === prop.value && styles.selectedOptionText
-                  ]}>
-                    {prop.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+  const pickUpload = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images', 'videos'], quality: 0.7, base64: true });
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    const fileType = asset.mimeType || 'application/octet-stream';
+    const fileUrl = asset.base64 ? `data:${fileType};base64,${asset.base64}` : asset.uri;
+    update('uploadedFiles', [...intake.uploadedFiles, { fileName: asset.fileName || 'upload', fileType, fileUrl, notes: '' }]);
+  };
+
+  const submitIntake = async () => {
+    const res = await fetch(`${API_BASE_URL}/public/service-requests`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(intake),
+    });
+    if (!res.ok) {
+      Alert.alert('Submission failed', (await res.json()).detail || 'Please try again.');
+      return;
+    }
+    const data = await res.json();
+    setConfirmation(data);
+    setStep(8);
+  };
+
+  const login = async () => {
+    const res = await fetch(`${API_BASE_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    if (!res.ok) return Alert.alert('Login failed', 'Invalid credentials');
+    const data = await res.json();
+    setToken(data.token);
+    setMode('admin');
+  };
+
+  const loadRequests = async () => {
+    if (!token) return;
+    const res = await fetch(`${API_BASE_URL}/admin/service-requests`, { headers: { Authorization: `Bearer ${token}` } });
+    setRequests(await res.json());
+  };
+
+  const loadDigest = async () => {
+    const res = await fetch(`${API_BASE_URL}/admin/morning-digest`, { headers: { Authorization: `Bearer ${token}` } });
+    const data = await res.json();
+    setDigest(data.digestText || 'No requests since previous close.');
+  };
+
+  const loadSettings = async () => {
+    const res = await fetch(`${API_BASE_URL}/admin/settings`, { headers: { Authorization: `Bearer ${token}` } });
+    setSettings(await res.json());
+  };
+
+  useEffect(() => {
+    if (mode === 'admin') {
+      loadRequests();
+      loadDigest();
+      loadSettings();
+    }
+  }, [mode, token]);
+
+  const dashboardStats = useMemo(() => {
+    const count = (fn: (row: any) => boolean) => requests.filter(fn).length;
+    return {
+      New: count((r) => r.status === 'New'),
+      High: count((r) => r.priorityScore >= 80),
+      Existing: count((r) => r.customerType === 'existing'),
+      Contacted: count((r) => r.status === 'Contacted'),
+      Converted: count((r) => r.status === 'Converted'),
+      Closed: count((r) => r.status === 'Closed'),
+    };
+  }, [requests]);
+
+  const updateStatus = async (status: string) => {
+    if (!activeRequest) return;
+    await fetch(`${API_BASE_URL}/admin/service-requests/${activeRequest.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ status, internalNotes: activeRequest.internalNotes || '' }),
+    });
+    await loadRequests();
+  };
+
+  const updateNotes = async () => {
+    if (!activeRequest) return;
+    await fetch(`${API_BASE_URL}/admin/service-requests/${activeRequest.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ status: activeRequest.status, internalNotes: activeRequest.internalNotes || '' }),
+    });
+    await loadRequests();
+    Alert.alert('Saved', 'Internal notes updated.');
+  };
+
+  const saveSettings = async () => {
+    await fetch(`${API_BASE_URL}/admin/settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(settings),
+    });
+    Alert.alert('Saved', 'Settings updated.');
+  };
+
+  const renderIntake = () => {
+    const sections = [
+      <View key="landing">
+        <Text style={styles.hero}>Start Your Service Request</Text>
+        <Text style={styles.body}>LakeReady Intake securely captures your after-hours marine service request for next business-hour review.</Text>
+        <Text style={styles.warning}>Emergency Disclaimer: This form does not provide emergency response. If there is immediate danger, contact 911 or marine emergency services.</Text>
+      </View>,
+      <View key="customer">
+        <LabeledInput label="Full name" value={intake.customerName} onChangeText={(v: string) => update('customerName', v)} />
+        <LabeledInput label="Phone number" value={intake.customerPhone} onChangeText={(v: string) => update('customerPhone', v)} />
+        <LabeledInput label="Email" value={intake.customerEmail} onChangeText={(v: string) => update('customerEmail', v)} />
+        <SelectButtons label="Preferred contact" value={intake.preferredContactMethod} options={['call', 'text', 'email']} onChange={(v: string) => update('preferredContactMethod', v)} />
+        <LabeledInput label="Best callback time" value={intake.bestCallbackTime} onChangeText={(v: string) => update('bestCallbackTime', v)} />
+        <SelectButtons label="Customer type" value={intake.customerType} options={['new', 'existing']} onChange={(v: string) => update('customerType', v)} />
+      </View>,
+      <View key="boat">
+        <LabeledInput label="Boat year" value={intake.boatYear} onChangeText={(v: string) => update('boatYear', v)} />
+        <LabeledInput label="Boat make" value={intake.boatMake} onChangeText={(v: string) => update('boatMake', v)} />
+        <LabeledInput label="Boat model" value={intake.boatModel} onChangeText={(v: string) => update('boatModel', v)} />
+        <SelectButtons label="Boat location type" value={intake.boatLocationType} options={['on trailer', 'in slip', 'on lift', 'marina', 'customer home', 'stranded/on water', 'other']} onChange={(v: string) => update('boatLocationType', v)} />
+        <LabeledInput label="Location details / marina" value={intake.boatLocationDetails} onChangeText={(v: string) => update('boatLocationDetails', v)} />
+        <LabeledInput label="Hull ID/registration (optional)" value={intake.hullOrRegistration} onChangeText={(v: string) => update('hullOrRegistration', v)} />
+      </View>,
+      <View key="engine">
+        <SelectButtons label="Engine type" value={intake.engineType} options={['inboard', 'sterndrive', 'outboard', 'jet boat/PWC', 'unknown']} onChange={(v: string) => update('engineType', v)} />
+        <SelectButtons label="Engine brand" value={intake.engineBrand} options={['Mercury', 'MerCruiser', 'PCM', 'Volvo Penta', 'Indmar', 'Ilmor', 'Yamaha', 'Honda', 'Sea-Doo/Rotax', 'other', 'unknown']} onChange={(v: string) => update('engineBrand', v)} />
+        <LabeledInput label="Engine model / horsepower" value={intake.engineModel} onChangeText={(v: string) => update('engineModel', v)} />
+        <LabeledInput label="Engine hours" value={intake.engineHours} onChangeText={(v: string) => update('engineHours', v)} />
+        <SelectButtons label="Engine count" value={intake.engineCount} options={['single', 'twin']} onChange={(v: string) => update('engineCount', v)} />
+      </View>,
+      <View key="problem">
+        <SelectButtons label="Problem category" value={intake.problemCategory} options={categoryOptions} onChange={(v: string) => update('problemCategory', v)} />
+        <LabeledInput label="Description" value={intake.issueDescription} onChangeText={(v: string) => update('issueDescription', v)} />
+        <LabeledInput label="When did it start?" value={intake.startTimeDescription} onChangeText={(v: string) => update('startTimeDescription', v)} />
+        <LabeledInput label="What happened right before?" value={intake.precedingEvent} onChangeText={(v: string) => update('precedingEvent', v)} />
+        <LabeledInput label="Does engine run currently?" value={intake.engineRuns} onChangeText={(v: string) => update('engineRuns', v)} />
+        <LabeledInput label="Alarms/lights/fault codes" value={intake.alarmsOrCodes} onChangeText={(v: string) => update('alarmsOrCodes', v)} />
+        <LabeledInput label="Recent service" value={intake.recentService} onChangeText={(v: string) => update('recentService', v)} />
+        <LabeledInput label="Fuel info (optional)" value={intake.fuelInfo} onChangeText={(v: string) => update('fuelInfo', v)} />
+        <LabeledInput label="Battery info (optional)" value={intake.batteryInfo} onChangeText={(v: string) => update('batteryInfo', v)} />
+      </View>,
+      <View key="urgency">
+        <SelectButtons label="Urgency" value={intake.urgency} options={urgencyOptions} onChange={(v: string) => update('urgency', v)} />
+        <TouchableOpacity onPress={() => update('disclaimerAccepted', !intake.disclaimerAccepted)} style={styles.checkboxRow}>
+          <Text style={styles.checkbox}>{intake.disclaimerAccepted ? '☑' : '☐'}</Text>
+          <Text style={styles.body}>I understand this form does not provide a diagnosis, estimate, appointment guarantee, or emergency response.</Text>
+        </TouchableOpacity>
+      </View>,
+      <View key="upload">
+        <TouchableOpacity onPress={pickUpload} style={styles.primaryBtn}><Text style={styles.primaryBtnText}>Upload Photo / Video</Text></TouchableOpacity>
+        {intake.uploadedFiles.map((f: any, idx: number) => <Text key={idx} style={styles.body}>• {f.fileName} ({f.fileType})</Text>)}
+      </View>,
+      <View key="review">
+        <Text style={styles.hero}>Review and Submit</Text>
+        <Text style={styles.body}>{JSON.stringify(intake, null, 2)}</Text>
+        <TouchableOpacity style={styles.primaryBtn} onPress={submitIntake}><Text style={styles.primaryBtnText}>Submit Request</Text></TouchableOpacity>
+      </View>,
+      <View key="confirm">
+        <Text style={styles.hero}>Your request has been received.</Text>
+        <Text style={styles.body}>Request ID: {confirmation?.requestNumber}</Text>
+        <Text style={styles.warning}>{config.disclaimerText}</Text>
+        <TouchableOpacity style={styles.primaryBtn} onPress={() => { setMode('start'); setStep(0); setIntake(blankIntake); }}><Text style={styles.primaryBtnText}>Done</Text></TouchableOpacity>
+      </View>,
+    ];
+
+    return (
+      <SafeAreaView style={styles.page}>
+        <ScrollView contentContainerStyle={styles.container}>
+          <View style={styles.card}>{sections[step]}</View>
+          {step < 8 && (
+            <View style={styles.navRow}>
+              {step > 0 && <TouchableOpacity style={styles.secondaryBtn} onPress={() => setStep((s) => s - 1)}><Text>Back</Text></TouchableOpacity>}
+              {step < 7 && <TouchableOpacity style={styles.primaryBtn} onPress={() => setStep((s) => s + 1)}><Text style={styles.primaryBtnText}>{step === 0 ? 'Start Intake' : 'Continue'}</Text></TouchableOpacity>}
             </View>
           )}
-        </View>
-      )}
-    />
-  );
-
-  const renderSectionHeader = (title: string) => (
-    <View style={styles.sectionHeaderRow}>
-      <LinearGradient
-        colors={[colors.primary, 'transparent']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.sectionAccentLine}
-      />
-      <Text style={styles.sectionTitle}>{title}</Text>
-    </View>
-  );
-
-  return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardView}
-      >
-        <View style={styles.header}>
-          <PressableScale onPress={() => navigation.goBack()} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={spacing['2xl']} color={colors.text} />
-          </PressableScale>
-          <Text style={styles.title}>Add Customer</Text>
-          <View style={styles.placeholder} />
-          <LinearGradient
-            colors={[withAlpha(colors.primary, 0.4), 'transparent']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.headerBorderGradient}
-          />
-        </View>
-
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.section}>
-            {renderSectionHeader('Customer Information')}
-            {renderInput('name', 'Customer Name *', { required: 'Name is required' })}
-            {renderInput('phone', 'Phone Number', undefined, 'phone-pad')}
-            {renderInput('address', 'Address')}
-          </View>
-
-          <View style={styles.section}>
-            {renderSectionHeader('Boat Information')}
-            {renderInput('boat_year', 'Boat Year', undefined, 'numeric')}
-            {renderInput('boat_make', 'Boat Make')}
-            {renderInput('boat_model', 'Boat Model')}
-            {renderInput('boat_length', 'Boat Length')}
-            {renderInput('boat_hin', 'Boat HIN')}
-            {renderPropTypePicker()}
-          </View>
-
-          <View style={styles.section}>
-            {renderSectionHeader('Engine Information')}
-            {renderInput('engine_type', 'Engine Type')}
-            {renderInput('engine_serial_number', 'Engine Serial Number')}
-            {renderInput('engine_year', 'Engine Year', undefined, 'numeric')}
-            {renderInput('engine_make', 'Engine Make')}
-            {renderInput('engine_model', 'Engine Model')}
-            {renderInput('engine_horsepower', 'Engine Horsepower', undefined, 'numeric')}
-            {renderInput('engine_hours', 'Engine Hours', undefined, 'numeric')}
-          </View>
-
-          <PressableScale
-            onPress={handleSubmit(onSubmit)}
-            disabled={loading}
-            style={loading ? { opacity: 0.6 } : undefined}
-          >
-            <LinearGradient
-              colors={[colors.primary, colors.primaryDark]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.submitButton}
-            >
-              <Text style={styles.submitButtonText}>
-                {loading ? 'Adding Customer...' : 'Add Customer'}
-              </Text>
-            </LinearGradient>
-          </PressableScale>
         </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
-  );
-}
+      </SafeAreaView>
+    );
+  };
 
-function SettingsScreen() {
-  const settingsOptions: SettingOption[] = [
-    {
-      title: 'About',
-      subtitle: 'App version and information',
-      icon: 'information-circle',
-      onPress: () => {},
-    },
-    {
-      title: 'Export Data',
-      subtitle: 'Export customer data',
-      icon: 'download',
-      onPress: () => {},
-    },
-    {
-      title: 'Backup',
-      subtitle: 'Backup and restore data',
-      icon: 'cloud-upload',
-      onPress: () => {},
-    },
-    {
-      title: 'Support',
-      subtitle: 'Get help and support',
-      icon: 'help-circle',
-      onPress: () => {},
-    },
-  ];
-
-  const renderSettingOption = (option: SettingOption) => (
-    <PressableScale key={option.title} onPress={option.onPress}>
-      <GlassCard style={styles.optionCardOuter} intensity={20}>
-        <View style={styles.optionRow}>
-          <View style={styles.optionIcon}>
-            <Ionicons name={option.icon} size={spacing['2xl']} color={colors.primary} />
-          </View>
-          <View style={styles.optionContent}>
-            <Text style={styles.optionTitle}>{option.title}</Text>
-            <Text style={styles.optionSubtitle}>{option.subtitle}</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={spacing.xl} color={colors.textSecondary} />
-        </View>
-      </GlassCard>
-    </PressableScale>
-  );
-
-  return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Settings</Text>
-        <LinearGradient
-          colors={[withAlpha(colors.primary, 0.4), 'transparent']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.headerBorderGradient}
+  const renderDashboard = () => (
+    <View style={{ flex: 1, flexDirection: isMobile ? 'column' : 'row', gap: 12 }}>
+      <View style={[styles.card, { flex: isMobile ? 0 : 1 }]}>
+        <Text style={styles.section}>Dashboard</Text>
+        <View style={styles.pillWrap}>{Object.entries(dashboardStats).map(([k, v]) => <View key={k} style={styles.stat}><Text style={styles.statTitle}>{k}</Text><Text style={styles.statValue}>{String(v)}</Text></View>)}</View>
+        <FlatList
+          data={requests}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <TouchableOpacity style={styles.row} onPress={() => setActiveRequest(item)}>
+              <Text style={styles.rowTitle}>{item.requestNumber} • {item.customerName}</Text>
+              <Text style={styles.rowMeta}>{item.customerPhone} | {item.boatMake} {item.boatModel} | {item.engineBrand} | {item.problemCategory}</Text>
+              <Text style={styles.rowMeta}>Urgency: {item.urgency} • Status: {item.status}</Text>
+            </TouchableOpacity>
+          )}
         />
       </View>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        <View style={styles.scrollContent}>
-          <View style={styles.section}>
-            <View style={styles.sectionHeaderRow}>
-              <LinearGradient
-                colors={[colors.primary, 'transparent']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.sectionAccentLine}
-              />
-              <Text style={styles.sectionTitle}>General</Text>
-            </View>
-            {settingsOptions.map(renderSettingOption)}
+      {!!activeRequest && (
+        <View style={[styles.card, { flex: 1.2 }]}>
+          <Text style={styles.section}>Request Detail</Text>
+          <Text style={styles.body}>{activeRequest.aiSummary}</Text>
+          <Text style={styles.body}>Recommended category: {activeRequest.problemCategory}</Text>
+          <Text style={styles.body}>Customer: {activeRequest.customerName} / {activeRequest.customerPhone} / {activeRequest.customerEmail}</Text>
+          <Text style={styles.body}>Boat: {activeRequest.boatYear} {activeRequest.boatMake} {activeRequest.boatModel} ({activeRequest.boatLocationType})</Text>
+          <Text style={styles.body}>Engine: {activeRequest.engineType} {activeRequest.engineBrand} {activeRequest.engineModel}</Text>
+          <Text style={styles.body}>Issue: {activeRequest.issueDescription}</Text>
+          <Text style={styles.body}>Files: {(activeRequest.files || []).length}</Text>
+          <SelectButtons label="Status" value={activeRequest.status} options={statusOptions} onChange={(v: string) => { setActiveRequest({ ...activeRequest, status: v }); updateStatus(v); }} />
+          <LabeledInput label="Internal notes" value={activeRequest.internalNotes || ''} onChangeText={(v: string) => setActiveRequest({ ...activeRequest, internalNotes: v })} />
+          <View style={styles.navRow}>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={() => { navigator.clipboard?.writeText(activeRequest.aiSummary); Alert.alert('Copied', 'Summary copied.'); }}><Text>Copy summary</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={() => Alert.alert('Placeholder', 'Email action placeholder')}><Text>Email customer</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={() => Alert.alert('Placeholder', 'Text customer placeholder')}><Text>Text customer</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={() => Alert.alert('Placeholder', 'Export PDF placeholder')}><Text>Export PDF</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.primaryBtn} onPress={updateNotes}><Text style={styles.primaryBtnText}>Mark as contacted</Text></TouchableOpacity>
           </View>
-
-          <GlassCard style={styles.appInfoCard} intensity={30}>
-            <View style={styles.logoContainer}>
-              <View style={styles.logoGlow}>
-                <LinearGradient
-                  colors={[withAlpha(colors.primary, 0.3), 'transparent']}
-                  style={StyleSheet.absoluteFill}
-                  start={{ x: 0.5, y: 0 }}
-                  end={{ x: 0.5, y: 1 }}
-                />
-              </View>
-              <Ionicons name="boat" size={spacing['5xl']} color={colors.primary} />
-              <Text style={styles.appName}>Boat Repair Manager</Text>
-              <Text style={styles.appVersion}>Version 1.0.0</Text>
-            </View>
-
-            <Text style={styles.description}>
-              Manage your boat repair customers, track jobs, document work with photos,
-              and keep detailed notes all in one place.
-            </Text>
-
-            <View style={styles.features}>
-              {['Customer Management', 'Job Tracking', 'Photo Documentation', 'Notes & Comments'].map(
-                (feature) => (
-                  <View key={feature} style={styles.featureItem}>
-                    <Ionicons name="checkmark-circle" size={spacing.lg} color={colors.success} />
-                    <Text style={styles.featureText}>{feature}</Text>
-                  </View>
-                )
-              )}
-            </View>
-          </GlassCard>
         </View>
-      </ScrollView>
+      )}
+    </View>
+  );
+
+  const renderAdmin = () => (
+    <SafeAreaView style={styles.page}>
+      <View style={styles.adminHeader}>
+        {['dashboard', 'digest', 'settings'].map((tab) => (
+          <TouchableOpacity key={tab} onPress={() => setAdminTab(tab as any)} style={[styles.secondaryBtn, adminTab === tab && { borderColor: colors.blue }]}>
+            <Text>{tab}</Text>
+          </TouchableOpacity>
+        ))}
+        <TouchableOpacity style={styles.secondaryBtn} onPress={() => { setMode('start'); setToken(''); }}><Text>Logout</Text></TouchableOpacity>
+      </View>
+      <View style={{ flex: 1 }}>
+        {adminTab === 'dashboard' && renderDashboard()}
+        {adminTab === 'digest' && (
+          <ScrollView style={styles.card}>
+            <Text style={styles.section}>Morning Digest</Text>
+            <Text style={styles.body}>{digest}</Text>
+            <View style={styles.navRow}>
+              <TouchableOpacity style={styles.primaryBtn} onPress={() => navigator.clipboard?.writeText(digest)}><Text style={styles.primaryBtnText}>Copy to Clipboard</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.secondaryBtn} onPress={() => Alert.alert('Placeholder', 'Email digest placeholder')}><Text>Email Digest Placeholder</Text></TouchableOpacity>
+            </View>
+          </ScrollView>
+        )}
+        {adminTab === 'settings' && settings && (
+          <ScrollView style={styles.card}>
+            <Text style={styles.section}>Settings</Text>
+            <LabeledInput label="Shop name" value={settings.name} onChangeText={(v: string) => setSettings({ ...settings, name: v })} />
+            <LabeledInput label="Logo URL" value={settings.logoUrl || ''} onChangeText={(v: string) => setSettings({ ...settings, logoUrl: v })} />
+            <LabeledInput label="Business hours" value={settings.businessHours || ''} onChangeText={(v: string) => setSettings({ ...settings, businessHours: v })} />
+            <LabeledInput label="Service email" value={settings.serviceEmail || ''} onChangeText={(v: string) => setSettings({ ...settings, serviceEmail: v })} />
+            <LabeledInput label="Notification phone" value={settings.notificationPhone || ''} onChangeText={(v: string) => setSettings({ ...settings, notificationPhone: v })} />
+            <LabeledInput label="Intake link" value={`${API_BASE_URL.replace('/api', '')}/`} onChangeText={() => {}} />
+            <LabeledInput label="Emergency disclaimer" value={settings.disclaimerText || ''} onChangeText={(v: string) => setSettings({ ...settings, disclaimerText: v })} />
+            <LabeledInput label="Category customization (comma-separated)" value={(settings.categoryCustomization || []).join(',')} onChangeText={(v: string) => setSettings({ ...settings, categoryCustomization: v.split(',').map((x: string) => x.trim()).filter(Boolean) })} />
+            <LabeledInput label="Engine brand customization (comma-separated)" value={(settings.engineBrandCustomization || []).join(',')} onChangeText={(v: string) => setSettings({ ...settings, engineBrandCustomization: v.split(',').map((x: string) => x.trim()).filter(Boolean) })} />
+            <LabeledInput label="Webhook URL" value={settings.webhookUrl || ''} onChangeText={(v: string) => setSettings({ ...settings, webhookUrl: v })} />
+            <TouchableOpacity style={styles.primaryBtn} onPress={saveSettings}><Text style={styles.primaryBtnText}>Save Settings</Text></TouchableOpacity>
+          </ScrollView>
+        )}
+      </View>
     </SafeAreaView>
   );
-}
 
-function CustomersScreenUpdated({ navigation }: { navigation: Pick<ScreenNavigation, 'navigate'> }) {
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchFocused, setSearchFocused] = useState(false);
-  const searchBorderOpacity = useSharedValue(0);
-
-  const filteredCustomers = useMemo(() => {
-    if (!searchQuery) return customers;
-    return customers.filter(customer =>
-      customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      customer.boat.make?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      customer.boat.model?.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  }, [customers, searchQuery]);
-
-  const fetchCustomers = async () => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/customers`);
-      if (response.ok) {
-        const data = await response.json();
-        setCustomers(data);
-      }
-    } catch (error) {
-      console.error('Error fetching customers:', error);
-      Alert.alert('Error', 'Failed to load customers');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
-  React.useEffect(() => {
-    fetchCustomers();
-  }, []);
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchCustomers();
-  };
-
-  const getJobStatusCount = (customer: Customer) => {
-    return customer.jobs.reduce(
-      (counts, job) => {
-        if (job.status === 'pending') counts.pending++;
-        else if (job.status === 'in_progress') counts.inProgress++;
-        else if (job.status === 'completed') counts.completed++;
-        return counts;
-      },
-      { pending: 0, inProgress: 0, completed: 0 }
-    );
-  };
-
-  const searchBorderStyle = useAnimatedStyle(() => ({
-    borderColor: `rgba(212, 175, 55, ${searchBorderOpacity.value})`,
-  }));
-
-  const renderCustomerCard = ({ item, index }: { item: Customer; index: number }) => {
-    const jobCounts = getJobStatusCount(item);
-    const boatInfo = `${item.boat.year || ''} ${item.boat.make || ''} ${item.boat.model || ''}`.trim();
-
+  if (mode === 'start') {
     return (
-      <Animated.View entering={FadeInDown.delay(index * 80).springify().damping(15)}>
-        <PressableScale
-          onPress={() => Alert.alert('Customer Details', 'Full customer management coming soon!')}
-        >
-          <GlassCard style={styles.customerCardOuter}>
-            <View style={styles.customerHeader}>
-              <View style={styles.customerInfo}>
-                <Text style={styles.customerName}>{item.name}</Text>
-                {boatInfo ? <Text style={styles.boatInfo}>{boatInfo}</Text> : null}
-                {item.phone ? <Text style={styles.contactInfo}>{item.phone}</Text> : null}
-              </View>
-              <View style={styles.customerMeta}>
-                <View style={styles.metaRow}>
-                  <Ionicons name="images" size={typography.size.base} color={colors.textSecondary} />
-                  <Text style={styles.metaCount}>{item.images.length}</Text>
-                </View>
-                <View style={styles.metaRow}>
-                  <Ionicons name="document-text" size={typography.size.base} color={colors.textSecondary} />
-                  <Text style={styles.metaCount}>{item.notes.length}</Text>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.jobStatusContainer}>
-              <View style={styles.jobStatus}>
-                <View style={[styles.statusDot, { backgroundColor: colors.pending }]} />
-                <Text style={styles.statusText}>{jobCounts.pending} Pending</Text>
-              </View>
-              <View style={styles.jobStatus}>
-                <View style={[styles.statusDot, { backgroundColor: colors.inProgress }]} />
-                <Text style={styles.statusText}>{jobCounts.inProgress} In Progress</Text>
-              </View>
-              <View style={styles.jobStatus}>
-                <View style={[styles.statusDot, { backgroundColor: colors.completed }]} />
-                <Text style={styles.statusText}>{jobCounts.completed} Completed</Text>
-              </View>
-            </View>
-
-            <Text style={styles.lastActivity}>
-              Last updated: {new Date(item.last_activity).toLocaleDateString()}
-            </Text>
-          </GlassCard>
-        </PressableScale>
-      </Animated.View>
-    );
-  };
-
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <LoadingPulse />
+      <SafeAreaView style={styles.page}>
+        <View style={styles.container}>
+          <View style={styles.card}>
+            <Text style={styles.logo}>[ Shop Logo ]</Text>
+            <Text style={styles.hero}>LakeReady Intake</Text>
+            <Text style={styles.body}>After-hours marine service intake for repair shops, marinas, and mobile technicians around Lake Anna, VA.</Text>
+            <Text style={styles.warning}>{config.disclaimerText}</Text>
+            <TouchableOpacity style={styles.primaryBtn} onPress={() => { setMode('intake'); setStep(0); }}><Text style={styles.primaryBtnText}>Start Intake</Text></TouchableOpacity>
+          </View>
+          <View style={styles.card}>
+            <Text style={styles.section}>Shop Login</Text>
+            <LabeledInput label="Email" value={email} onChangeText={setEmail} />
+            <LabeledInput label="Password" value={password} onChangeText={setPassword} />
+            <TouchableOpacity style={styles.primaryBtn} onPress={login}><Text style={styles.primaryBtnText}>Login</Text></TouchableOpacity>
+            <Text style={styles.body}>Forgot password flow placeholder supported in v1 UI.</Text>
+          </View>
+        </View>
       </SafeAreaView>
     );
   }
 
-  return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Customers</Text>
-        <PressableScale onPress={() => navigation.navigate('Add Customer')}>
-          <LinearGradient
-            colors={[colors.primary, colors.primaryDark]}
-            style={styles.addButton}
-          >
-            <Ionicons name="add" size={spacing['2xl']} color="#000" />
-          </LinearGradient>
-        </PressableScale>
-        <LinearGradient
-          colors={[withAlpha(colors.primary, 0.4), 'transparent']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.headerBorderGradient}
-        />
-      </View>
-
-      <Animated.View style={[styles.searchOuter, searchBorderStyle]}>
-        <View style={styles.searchContainer}>
-          <Ionicons
-            name="search"
-            size={spacing.xl}
-            color={searchFocused ? colors.primary : colors.textSecondary}
-            style={styles.searchIcon}
-          />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search customers, boats..."
-            placeholderTextColor={colors.textSecondary}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            onFocus={() => {
-              setSearchFocused(true);
-              searchBorderOpacity.value = withTiming(0.6, { duration: 200 });
-            }}
-            onBlur={() => {
-              setSearchFocused(false);
-              searchBorderOpacity.value = withTiming(0, { duration: 200 });
-            }}
-          />
-        </View>
-      </Animated.View>
-
-      {filteredCustomers.length === 0 ? (
-        <Animated.View entering={FadeIn.duration(400)} style={styles.centerContent}>
-          <View style={styles.emptyIconContainer}>
-            <LinearGradient
-              colors={[withAlpha(colors.primary, 0.2), 'transparent']}
-              style={[StyleSheet.absoluteFill, { borderRadius: 60 }]}
-            />
-            <Ionicons name="boat" size={64} color={colors.textSecondary} />
-          </View>
-          <Text style={styles.emptyTitle}>
-            {searchQuery ? 'No customers found' : 'No customers yet'}
-          </Text>
-          <Text style={styles.emptySubtitle}>
-            {searchQuery ? 'Try adjusting your search' : 'Tap + to add your first customer'}
-          </Text>
-        </Animated.View>
-      ) : (
-        <FlatList
-          data={filteredCustomers}
-          renderItem={renderCustomerCard}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContainer}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={colors.primary}
-            />
-          }
-          showsVerticalScrollIndicator={false}
-        />
-      )}
-    </SafeAreaView>
-  );
+  if (mode === 'intake') return renderIntake();
+  return renderAdmin();
 }
-
-// --- App Root ---
-
-SplashScreen.preventAutoHideAsync();
-
-const TAB_CONFIG = [
-  { key: 0, label: 'Customers', iconActive: 'people' as const, iconInactive: 'people-outline' as const },
-  { key: 1, label: 'Add', iconActive: 'person-add' as const, iconInactive: 'person-add-outline' as const },
-  { key: 2, label: 'Settings', iconActive: 'settings' as const, iconInactive: 'settings-outline' as const },
-];
-
-export default function App() {
-  const [currentTab, setCurrentTab] = useState(0);
-  const insets = useSafeAreaInsets();
-  const [fontsLoaded] = Font.useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
-  });
-
-  React.useEffect(() => {
-    if (fontsLoaded) {
-      SplashScreen.hideAsync();
-    }
-  }, [fontsLoaded]);
-
-  if (!fontsLoaded) return null;
-
-  const navigateTo = (screen: string) => {
-    const screenMap: Record<string, number> = {
-      'Add Customer': 1,
-      'Customers': 0,
-    };
-    if (screen in screenMap) setCurrentTab(screenMap[screen]);
-  };
-
-  const screens: Record<number, React.ReactNode> = {
-    0: <CustomersScreenUpdated navigation={{ navigate: navigateTo }} />,
-    1: <AddCustomerScreen navigation={{ goBack: () => setCurrentTab(0), navigate: navigateTo }} />,
-    2: <SettingsScreen />,
-  };
-
-  const handleTabPress = (tabKey: number) => {
-    if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
-    setCurrentTab(tabKey);
-  };
-
-  return (
-    <LinearGradient
-      colors={[colors.background, '#0D1425', '#0A1020', colors.background]}
-      locations={[0, 0.3, 0.7, 1]}
-      style={styles.appContainer}
-    >
-      <StatusBar style="light" translucent backgroundColor="transparent" />
-
-      <Animated.View key={currentTab} entering={FadeIn.duration(250)} style={{ flex: 1 }}>
-        {screens[currentTab] ?? screens[0]}
-      </Animated.View>
-
-      <View style={[styles.tabBarOuter, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-        {Platform.OS === 'web' ? (
-          <View style={[styles.tabBar, { backgroundColor: 'rgba(255,255,255,0.06)' }]}>
-            {TAB_CONFIG.map((tab) => (
-              <TouchableOpacity
-                key={tab.key}
-                style={styles.tab}
-                onPress={() => handleTabPress(tab.key)}
-              >
-                <Ionicons
-                  name={currentTab === tab.key ? tab.iconActive : tab.iconInactive}
-                  size={spacing['2xl']}
-                  color={currentTab === tab.key ? colors.tabBarActive : colors.tabBarInactive}
-                />
-                <Text style={[
-                  styles.tabText,
-                  { color: currentTab === tab.key ? colors.tabBarActive : colors.tabBarInactive }
-                ]}>
-                  {tab.label}
-                </Text>
-                {currentTab === tab.key && (
-                  <Animated.View entering={FadeIn.duration(200)} style={styles.tabIndicator} />
-                )}
-              </TouchableOpacity>
-            ))}
-          </View>
-        ) : (
-          <BlurView intensity={40} tint="dark" style={styles.tabBar}>
-            {TAB_CONFIG.map((tab) => (
-              <PressableScale
-                key={tab.key}
-                style={styles.tab}
-                onPress={() => handleTabPress(tab.key)}
-                haptic={false}
-              >
-                <Ionicons
-                  name={currentTab === tab.key ? tab.iconActive : tab.iconInactive}
-                  size={spacing['2xl']}
-                  color={currentTab === tab.key ? colors.tabBarActive : colors.tabBarInactive}
-                />
-                <Text style={[
-                  styles.tabText,
-                  { color: currentTab === tab.key ? colors.tabBarActive : colors.tabBarInactive }
-                ]}>
-                  {tab.label}
-                </Text>
-                {currentTab === tab.key && (
-                  <Animated.View entering={FadeIn.duration(200)} style={styles.tabIndicator} />
-                )}
-              </PressableScale>
-            ))}
-          </BlurView>
-        )}
-      </View>
-    </LinearGradient>
-  );
-}
-
-// --- Styles ---
 
 const styles = StyleSheet.create({
-  appContainer: {
-    flex: 1,
-  },
-  container: {
-    flex: 1,
-    backgroundColor: 'transparent',
-  },
-  keyboardView: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.lg,
-    position: 'relative',
-  },
-  headerBorderGradient: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 1,
-  },
-  backButton: {
-    padding: spacing.xs,
-  },
-  title: {
-    fontSize: typography.size.xl,
-    fontFamily: typography.fontFamily.mono,
-    fontWeight: typography.weight.bold,
-    color: colors.text,
-    letterSpacing: 0.5,
-  },
-  placeholder: {
-    width: spacing['3xl'],
-  },
-  addButton: {
-    borderRadius: radius.full,
-    width: spacing['4xl'],
-    height: spacing['4xl'],
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  // Search
-  searchOuter: {
-    marginHorizontal: spacing.lg,
-    marginVertical: spacing.md,
-    borderRadius: radius.xl,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.surfaceBorder,
-    backgroundColor: colors.surface,
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    height: spacing['5xl'],
-  },
-  searchIcon: {
-    marginRight: spacing.md,
-  },
-  searchInput: {
-    flex: 1,
-    color: colors.text,
-    fontSize: typography.size.md,
-  },
-
-  // List
-  listContainer: {
-    padding: spacing.lg,
-  },
-  customerCardOuter: {
-    marginBottom: spacing.lg,
-  },
-  customerHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: spacing.md,
-  },
-  customerInfo: {
-    flex: 1,
-  },
-  customerName: {
-    fontSize: typography.size.lg,
-    fontFamily: typography.fontFamily.mono,
-    fontWeight: typography.weight.bold,
-    color: colors.text,
-    marginBottom: spacing.xs,
-  },
-  boatInfo: {
-    fontSize: typography.size.base,
-    color: colors.primary,
-    marginBottom: 2,
-  },
-  contactInfo: {
-    fontSize: typography.size.base,
-    color: colors.textSecondary,
-  },
-  customerMeta: {
-    alignItems: 'flex-end',
-    gap: spacing.xs,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  metaCount: {
-    fontSize: typography.size.sm,
-    color: colors.textSecondary,
-  },
-  jobStatusContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: spacing.sm,
-  },
-  jobStatus: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  statusDot: {
-    width: spacing.sm,
-    height: spacing.sm,
-    borderRadius: spacing.xs,
-    marginRight: 6,
-  },
-  statusText: {
-    fontSize: typography.size.sm,
-    color: colors.textSecondary,
-  },
-  lastActivity: {
-    fontSize: typography.size.sm,
-    color: colors.textMuted,
-    textAlign: 'right',
-  },
-
-  // Center / Empty / Loading
-  centerContent: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing['4xl'],
-  },
-  loadingText: {
-    fontSize: typography.size.md,
-    color: colors.textSecondary,
-    marginTop: spacing.lg,
-  },
-  emptyIconContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: spacing.xl,
-  },
-  emptyTitle: {
-    fontSize: typography.size.xl,
-    fontFamily: typography.fontFamily.mono,
-    fontWeight: typography.weight.bold,
-    color: colors.text,
-    marginBottom: spacing.sm,
-    textAlign: 'center',
-  },
-  emptySubtitle: {
-    fontSize: typography.size.base,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-
-  // Scroll / Form
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: spacing.xl,
-  },
-  section: {
-    marginBottom: spacing['2xl'],
-  },
-  sectionHeaderRow: {
-    marginBottom: spacing.lg,
-  },
-  sectionAccentLine: {
-    height: 2,
-    borderRadius: 1,
-    marginBottom: spacing.sm,
-    width: '40%',
-  },
-  sectionTitle: {
-    fontSize: typography.size.sm,
-    fontFamily: typography.fontFamily.mono,
-    fontWeight: typography.weight.semibold,
-    color: colors.primary,
-    letterSpacing: 1.5,
-    textTransform: 'uppercase',
-  },
-  inputContainer: {
-    marginBottom: spacing.lg,
-  },
-  inputWrapper: {
-    borderRadius: radius.md,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.surfaceBorder,
-    backgroundColor: colors.surface,
-  },
-  inputErrorBorder: {
-    borderColor: colors.error,
-  },
-  input: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    fontSize: typography.size.md,
-    color: colors.text,
-    minHeight: spacing['5xl'],
-  },
-  errorText: {
-    color: colors.error,
-    fontSize: typography.size.sm,
-    marginTop: spacing.xs,
-    marginLeft: spacing.xs,
-  },
-
-  // Dropdown
-  dropdownButton: {
-    borderWidth: 1,
-    borderColor: colors.surfaceBorder,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    minHeight: spacing['5xl'],
-  },
-  dropdownText: {
-    fontSize: typography.size.md,
-    color: colors.text,
-  },
-  placeholderText: {
-    color: colors.textSecondary,
-  },
-  dropdownWrapper: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.surfaceBorder,
-    borderRadius: radius.md,
-    marginTop: spacing.xs,
-    overflow: 'hidden',
-  },
-  dropdownOption: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.surfaceBorder,
-  },
-  selectedOption: {
-    backgroundColor: withAlpha(colors.primary, 0.125),
-  },
-  dropdownOptionText: {
-    fontSize: typography.size.md,
-    color: colors.text,
-  },
-  selectedOptionText: {
-    color: colors.primary,
-    fontWeight: typography.weight.medium,
-  },
-
-  // Submit
-  submitButton: {
-    borderRadius: radius.md,
-    paddingVertical: spacing.lg,
-    alignItems: 'center',
-    marginTop: spacing.sm,
-    marginBottom: spacing['3xl'],
-  },
-  submitButtonText: {
-    fontSize: typography.size.lg,
-    fontFamily: typography.fontFamily.mono,
-    fontWeight: typography.weight.semibold,
-    color: '#000',
-    letterSpacing: 0.5,
-  },
-
-  // Settings
-  optionCardOuter: {
-    marginBottom: spacing.sm,
-  },
-  optionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  optionIcon: {
-    marginRight: spacing.lg,
-  },
-  optionContent: {
-    flex: 1,
-  },
-  optionTitle: {
-    fontSize: typography.size.md,
-    fontWeight: typography.weight.medium,
-    color: colors.text,
-    marginBottom: 2,
-  },
-  optionSubtitle: {
-    fontSize: typography.size.base,
-    color: colors.textSecondary,
-  },
-  appInfoCard: {
-    marginTop: spacing.lg,
-    alignItems: 'center',
-  },
-  logoContainer: {
-    alignItems: 'center',
-    marginBottom: spacing['2xl'],
-  },
-  logoGlow: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    position: 'absolute',
-    top: -16,
-  },
-  appName: {
-    fontSize: typography.size.xl,
-    fontFamily: typography.fontFamily.mono,
-    fontWeight: typography.weight.bold,
-    color: colors.text,
-    marginTop: spacing.md,
-    marginBottom: spacing.xs,
-    letterSpacing: 0.5,
-  },
-  appVersion: {
-    fontSize: typography.size.base,
-    color: colors.textSecondary,
-  },
-  description: {
-    fontSize: typography.size.base,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: spacing['2xl'],
-  },
-  features: {
-    alignItems: 'flex-start',
-  },
-  featureItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  featureText: {
-    fontSize: typography.size.base,
-    color: colors.text,
-    marginLeft: spacing.sm,
-  },
-
-  // Tab Bar
-  tabBarOuter: {
-    overflow: 'hidden',
-    borderTopWidth: 1,
-    borderTopColor: colors.surfaceBorder,
-  },
-  tabBar: {
-    flexDirection: 'row',
-    paddingTop: spacing.sm,
-  },
-  tab: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.sm,
-  },
-  tabText: {
-    fontSize: typography.size.xs,
-    marginTop: spacing.xs,
-    fontWeight: typography.weight.medium,
-  },
-  tabIndicator: {
-    width: spacing.xs,
-    height: spacing.xs,
-    borderRadius: 2,
-    backgroundColor: colors.primary,
-    marginTop: spacing.xs,
-  },
+  page: { flex: 1, backgroundColor: colors.navy },
+  container: { gap: 16, padding: 18 },
+  card: { backgroundColor: colors.white, borderRadius: 14, padding: 16, borderWidth: 1, borderColor: colors.border, marginBottom: 12 },
+  logo: { color: colors.gray, marginBottom: 8 },
+  hero: { fontSize: 28, fontWeight: '700', color: colors.navy, marginBottom: 8 },
+  section: { fontSize: 20, fontWeight: '700', color: colors.navy, marginBottom: 10 },
+  body: { color: '#213240', marginBottom: 8 },
+  warning: { color: '#b03a2e', fontWeight: '600', marginBottom: 12 },
+  field: { marginBottom: 10 },
+  label: { color: colors.navy, fontWeight: '600', marginBottom: 6 },
+  input: { backgroundColor: colors.light, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, color: colors.navy },
+  primaryBtn: { backgroundColor: colors.blue, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, alignSelf: 'flex-start' },
+  primaryBtnText: { color: colors.white, fontWeight: '700' },
+  secondaryBtn: { backgroundColor: colors.white, borderColor: colors.border, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9 },
+  navRow: { marginTop: 8, flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
+  pillWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  pill: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 16, borderColor: colors.border, borderWidth: 1, backgroundColor: colors.white },
+  pillActive: { backgroundColor: '#e6f2ff', borderColor: colors.blue },
+  pillText: { color: colors.navy, fontSize: 12 },
+  pillTextActive: { color: colors.blue, fontWeight: '700' },
+  checkboxRow: { flexDirection: 'row', gap: 8, marginTop: 6, alignItems: 'flex-start' },
+  checkbox: { fontSize: 20 },
+  adminHeader: { flexDirection: 'row', gap: 8, padding: 12, flexWrap: 'wrap' },
+  stat: { backgroundColor: colors.light, borderRadius: 8, padding: 8, minWidth: 88, borderWidth: 1, borderColor: colors.border },
+  statTitle: { color: colors.gray, fontSize: 12 },
+  statValue: { color: colors.navy, fontWeight: '700', fontSize: 18 },
+  row: { borderBottomColor: colors.border, borderBottomWidth: 1, paddingVertical: 10 },
+  rowTitle: { fontWeight: '700', color: colors.navy },
+  rowMeta: { color: '#31495d', fontSize: 12, marginTop: 2 },
 });
