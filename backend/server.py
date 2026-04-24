@@ -10,6 +10,7 @@ from typing import List, Optional
 import uuid
 from datetime import datetime
 from enum import Enum
+import requests
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -120,6 +121,100 @@ class NoteCreate(BaseModel):
 @api_router.get("/")
 async def root():
     return {"message": "Boat Repair Customer Management API"}
+
+
+def _safe_float(value, default=None):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _fetch_json(url: str):
+    response = requests.get(url, timeout=12)
+    response.raise_for_status()
+    return response.json()
+
+
+def _open_meteo_snapshot(lat: float, lon: float):
+    url = (
+        "https://api.open-meteo.com/v1/forecast"
+        f"?latitude={lat}&longitude={lon}"
+        "&current=temperature_2m,pressure_msl,wind_speed_10m,wind_direction_10m,"
+        "relative_humidity_2m,cloud_cover,uv_index,is_day,weather_code"
+    )
+    payload = _fetch_json(url)
+    current = payload.get("current", {})
+    return {
+        "timestamp": current.get("time"),
+        "temperature_c": _safe_float(current.get("temperature_2m")),
+        "pressure_hpa": _safe_float(current.get("pressure_msl")),
+        "wind_speed_kph": _safe_float(current.get("wind_speed_10m")),
+        "wind_direction_deg": _safe_float(current.get("wind_direction_10m")),
+        "humidity_pct": _safe_float(current.get("relative_humidity_2m")),
+        "cloud_cover_pct": _safe_float(current.get("cloud_cover")),
+        "uv_index": _safe_float(current.get("uv_index")),
+    }
+
+
+def _swpc_space_snapshot():
+    # Free NOAA SWPC endpoints (no API key required)
+    k_index_rows = _fetch_json("https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json")
+    plasma_rows = _fetch_json("https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json")
+    mag_rows = _fetch_json("https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json")
+
+    k_latest = k_index_rows[-1] if len(k_index_rows) > 1 else []
+    plasma_latest = plasma_rows[-1] if len(plasma_rows) > 1 else []
+    mag_latest = mag_rows[-1] if len(mag_rows) > 1 else []
+
+    return {
+        "kp_index": _safe_float(k_latest[1] if len(k_latest) > 1 else None),
+        "kp_timestamp": k_latest[0] if len(k_latest) > 0 else None,
+        "solar_wind_speed_km_s": _safe_float(plasma_latest[2] if len(plasma_latest) > 2 else None),
+        "solar_wind_density_p_cm3": _safe_float(plasma_latest[1] if len(plasma_latest) > 1 else None),
+        "solar_wind_timestamp": plasma_latest[0] if len(plasma_latest) > 0 else None,
+        "interplanetary_bt_nt": _safe_float(mag_latest[1] if len(mag_latest) > 1 else None),
+        "interplanetary_bz_nt": _safe_float(mag_latest[3] if len(mag_latest) > 3 else None),
+        "mag_timestamp": mag_latest[0] if len(mag_latest) > 0 else None,
+    }
+
+
+@api_router.get("/uap/telemetry")
+async def get_uap_telemetry(lat: float = 36.7783, lon: float = -119.4179):
+    """
+    Free, no-key telemetry blend for UAP skywatch:
+    - Open-Meteo for local atmospheric values
+    - NOAA SWPC for geomagnetic/solar-wind variables
+    """
+    try:
+        weather = _open_meteo_snapshot(lat, lon)
+        space = _swpc_space_snapshot()
+        estimated_cloud_potential_kv = (
+            round((weather["cloud_cover_pct"] or 0) * (weather["humidity_pct"] or 0) * 0.08, 2)
+        )
+        dusty_plasma_index = round(
+            ((space["solar_wind_density_p_cm3"] or 0) * 0.4)
+            + ((space["interplanetary_bt_nt"] or 0) * 0.8)
+            + ((weather["cloud_cover_pct"] or 0) * 0.03),
+            2,
+        )
+
+        return {
+            "source": {
+                "weather": "Open-Meteo (free, no-key)",
+                "space": "NOAA SWPC public products (free, no-key)",
+            },
+            "location": {"lat": lat, "lon": lon},
+            "captured_at": datetime.utcnow().isoformat(),
+            "weather": weather,
+            "space_weather": space,
+            "experimental": {
+                "estimated_cloud_potential_kv": estimated_cloud_potential_kv,
+                "dusty_plasma_index": dusty_plasma_index,
+            },
+        }
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=503, detail=f"Upstream telemetry source unavailable: {exc}")
 
 # Customer endpoints
 @api_router.post("/customers", response_model=Customer)
