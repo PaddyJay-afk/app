@@ -1,0 +1,54 @@
+# Raw/private financial data - never commit
+.env
+*.env
+raw_sources/**
+attachments/**
+parsed_text/**
+output/**
+logs/**
+
+# Allow safe documentation/placeholders
+!raw_sources/.gitkeep
+!attachments/.gitkeep
+!parsed_text/.gitkeep
+!output/.gitkeep
+!logs/.gitkeep
+!redacted_working/.gitkeep
+
+# Local credentials and tokens
+credentials*.json
+token*.json
+*.sqlite
+*.db
+*.key
+*.pem
+*.p12
+*.pfx
+cookies*.txt
+
+# Financial/source documents
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.heic
+*.tiff
+*.mbox
+*.eml
+*.msg
+*.pst
+*.ost
+*.xlsx
+*.xls
+*.csv
+*.docx
+*.zip
+*.7z
+*.rar
+
+# Python/runtime
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
